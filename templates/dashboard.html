@@ -2,182 +2,1176 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AutoFlow AI Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoFlow AI - ML Operations Dashboard</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f4f6f9; display: flex; color: #333; }
-        .sidebar { width: 240px; background: #1e293b; color: white; min-height: 100vh; padding: 20px; }
-        .sidebar h2 { font-size: 20px; margin-bottom: 30px; color: #38bdf8; }
-        .sidebar nav a { display: block; color: #cbd5e1; padding: 12px; text-decoration: none; border-radius: 6px; margin-bottom: 8px; }
-        .sidebar nav a.active { background: #334155; color: white; font-weight: bold; }
-        .main-content { flex: 1; padding: 40px; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 40px; }
-        .card { background: white; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .card h3 { margin: 0 0 10px 0; color: #64748b; font-size: 14px; text-transform: uppercase; }
-        .card p { margin: 0; font-size: 28px; font-weight: bold; color: #0f172a; }
-        .section { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 30px; }
-        .section h2 { margin-top: 0; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-        th { background: #f8fafc; color: #64748b; }
-        .btn { background: #0284c7; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        .btn:hover { background: #0369a1; }
-        select, input[type="file"] { padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; width: 100%; max-width: 300px; margin-bottom: 15px; display: block;}
-        pre { background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0; overflow-x: auto; }
-        textarea { width: 100%; height: 100px; font-family: monospace; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; }
+        :root {
+            --bg: #f3f6fb;
+            --surface: #ffffff;
+            --ink: #0f172a;
+            --ink-soft: #42536b;
+            --ink-faint: #64748b;
+            --line: #e2e8f0;
+            --accent: #0b62a4;
+            --accent-strong: #084a7d;
+            --accent-soft: #e6f1fb;
+            --ok: #12683b;
+            --ok-soft: #e8f7ef;
+            --warn: #9a5806;
+            --warn-soft: #fdf3e0;
+            --danger: #a01c1c;
+            --danger-soft: #fdecec;
+            --radius: 10px;
+            --shadow: 0 1px 2px rgba(15, 23, 42, .07), 0 10px 28px rgba(15, 23, 42, .05);
+            font-size: 16px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a { color: var(--accent); }
+
+        :focus-visible {
+            outline: 3px solid #1d4ed8;
+            outline-offset: 2px;
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: #0e1a2b;
+            color: #ffffff;
+            padding: .7rem 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            box-shadow: 0 1px 0 rgba(255,255,255,.08), 0 6px 18px rgba(2, 8, 20, .35);
+        }
+
+        .brand { display: flex; align-items: center; gap: .6rem; font-weight: 700; letter-spacing: .2px; }
+        .brand-dot { width: 12px; height: 12px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, .25); }
+
+        .topnav { display: flex; gap: .35rem; flex-wrap: wrap; margin-left: auto; }
+        .topnav a {
+            color: #d7e3f4;
+            text-decoration: none;
+            font-size: .9rem;
+            font-weight: 600;
+            padding: .4rem .75rem;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+        .topnav a:hover { background: rgba(255, 255, 255, .12); color: #ffffff; }
+
+        main { max-width: 1180px; margin: 0 auto; padding: 1.6rem 1.2rem 4rem; }
+
+        section { scroll-margin-top: 4.5rem; margin-bottom: 1.6rem; }
+        .section-title { font-size: 1.15rem; margin: 0 0 .2rem; }
+        .section-sub { color: var(--ink-faint); margin: 0 0 1rem; font-size: .93rem; }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 1.1rem 1.2rem;
+            margin-bottom: 1.1rem;
+        }
+
+        h3 { font-size: .95rem; margin: 0 0 .6rem; color: var(--ink); }
+
+        .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+
+        .stat-label { text-transform: uppercase; letter-spacing: .07em; font-size: .72rem; font-weight: 700; color: var(--ink-faint); }
+        .stat-value { font-weight: 700; font-size: 1.35rem; margin: .15rem 0 .35rem; word-break: break-word; }
+        .stat-meta { font-size: .82rem; color: var(--ink-soft); }
+        .stat-meta code, td code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; }
+
+        .badge {
+            display: inline-block;
+            font-size: .72rem;
+            font-weight: 700;
+            padding: .18rem .55rem;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            vertical-align: middle;
+        }
+        .badge-finished { background: var(--ok-soft); color: var(--ok); border-color: #bfe8ce; }
+        .badge-failed { background: var(--danger-soft); color: var(--danger); border-color: #f5c2c2; }
+        .badge-running { background: var(--warn-soft); color: var(--warn); border-color: #f1dcae; }
+        .badge-neutral { background: #eef2f7; color: var(--ink-soft); border-color: #d7dee8; }
+        .badge-warn { background: var(--warn-soft); color: var(--warn); border-color: #f1dcae; }
+        .badge-ok { background: var(--ok-soft); color: var(--ok); border-color: #bfe8ce; }
+
+        table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+        th, td { text-align: left; padding: .55rem .65rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+        thead th { background: #f6f8fc; color: var(--ink-soft); font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; border-bottom: 2px solid var(--line); }
+        tbody tr:last-child td { border-bottom: none; }
+        .table-scroll { overflow-x: auto; }
+        .row-highlight { background: var(--ok-soft); }
+        .row-failed { background: var(--danger-soft); }
+
+        .error-note {
+            color: var(--danger);
+            font-size: .8rem;
+            margin-top: .3rem;
+        }
+
+        .notice {
+            padding: .6rem .8rem;
+            border-radius: 8px;
+            font-size: .87rem;
+            margin: .6rem 0 .2rem;
+            border: 1px solid;
+        }
+        .notice-warn { background: var(--warn-soft); border-color: #f1dcae; color: var(--warn); }
+        .notice-ok { background: var(--ok-soft); border-color: #bfe8ce; color: var(--ok); }
+        .notice-error { background: var(--danger-soft); border-color: #f5c2c2; color: var(--danger); }
+        .notice-neutral { background: #eef2f7; border-color: #d7dee8; color: var(--ink-soft); }
+
+        .empty {
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            background: #fbfcfe;
+            padding: 1.4rem 1rem;
+            text-align: center;
+            color: var(--ink-faint);
+            font-size: .9rem;
+        }
+
+        label { display: block; font-weight: 600; font-size: .85rem; margin: 0 0 .3rem; color: var(--ink-soft); }
+        select, input[type="text"], input[type="number"], input[type="file"] {
+            font: inherit;
+            color: var(--ink);
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: .5rem .6rem;
+            width: 100%;
+            max-width: 100%;
+        }
+        select:focus, input:focus { border-color: var(--accent); }
+
+        .btn {
+            background: var(--accent);
+            color: #ffffff;
+            border: 1px solid transparent;
+            font: inherit;
+            font-weight: 700;
+            padding: .55rem 1.05rem;
+            border-radius: 8px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+        }
+        .btn:hover:not(:disabled) { background: var(--accent-strong); }
+        .btn:disabled { opacity: .55; cursor: not-allowed; }
+        .btn-secondary { background: var(--surface); color: var(--accent-strong); border-color: #b7cfe6; }
+        .btn-secondary:hover:not(:disabled) { background: var(--accent-soft); }
+        .is-busy { position: relative; padding-right: 2.4rem; }
+        .is-busy::after {
+            content: "";
+            position: absolute;
+            right: .8rem;
+            width: .9em;
+            height: .9em;
+            border: 2px solid rgba(255,255,255,.45);
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+        }
+        .btn-secondary.is-busy::after { border-color: rgba(8, 74, 125, .3); border-top-color: var(--accent-strong); }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .progress {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 999px;
+            overflow: hidden;
+            margin: .5rem 0;
+            display: none;
+        }
+        .progress.active { display: block; }
+        .progress-bar { height: 100%; width: 0; background: var(--accent); transition: width .2s ease; }
+
+        .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+        .field-hint { font-size: .75rem; color: var(--ink-faint); margin-top: .25rem; }
+        .missing-toggle { display: flex; align-items: center; gap: .4rem; font-size: .78rem; color: var(--ink-soft); margin-top: .3rem; font-weight: 500; }
+        .missing-toggle input { width: auto; }
+
+        .mono-left { text-align: left; }
+        details.matrix summary { cursor: pointer; font-size: .8rem; color: var(--accent); }
+        details.matrix { margin-top: .35rem; }
+        details.matrix pre { margin: .4rem 0 0; }
+
+        .fingerprint { word-break: break-all; }
+
+        footer.help { color: var(--ink-faint); font-size: .78rem; margin-top: .8rem; }
+
+        @media (max-width: 1024px) {
+            .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        @media (max-width: 640px) {
+            main { padding: 1.1rem .8rem 3rem; }
+            .card { padding: .95rem; }
+            .grid, .field-grid { grid-template-columns: 1fr; }
+            .topnav a { padding: .35rem .6rem; font-size: .84rem; }
+            .btn { width: 100%; justify-content: center; }
+            .stat-value { font-size: 1.15rem; }
+        }
     </style>
 </head>
-<body>
-    <div class="sidebar">
-        <h2>AutoFlow AI</h2>
-        <nav>
-            <a href="#" class="active">Dashboard</a>
-            <a href="#">Datasets</a>
-            <a href="#">Pipelines</a>
-            <a href="#">Experiments</a>
-            <a href="#">Deployments</a>
-        </nav>
-    </div>
-    <div class="main-content">
-        <div class="header">
-            <h1>End-to-End Autonomous Pipeline Control</h1>
-        </div>
-                 
+<body
+    data-has-dataset="{{ 'true' if state.dataset_path else 'false' }}"
+    data-has-model="{{ 'true' if (state.best_model or state.active_model) else 'false' }}">
+
+<header class="topbar">
+    <div class="brand"><span class="brand-dot" aria-hidden="true"></span>AutoFlow AI</div>
+    <nav class="topnav" aria-label="Dashboard sections">
+        <a href="#overview">Overview</a>
+        <a href="#dataset">Dataset</a>
+        <a href="#training">Training</a>
+        <a href="#experiments">Experiments</a>
+        <a href="#predictions">Predictions</a>
+    </nav>
+</header>
+
+<main>
+    <!-- ============ 1. OVERVIEW ============ -->
+    <section id="overview" aria-labelledby="overview-title">
+        <h1 class="section-title" id="overview-title">Overview</h1>
+        <p class="section-sub">Current state loaded from the persisted application state on this server.</p>
         <div class="grid">
             <div class="card">
-                <h3>Dataset Uploaded</h3>
-                <p>{% if state.dataset_path %}{{ state.filename }}{% else %}None{% endif %}</p>
+                <span class="stat-label">Dataset</span>
+                <p class="stat-value">{% if state.dataset_path %}{{ state.filename }}{% else %}None{% endif %}</p>
+                <p class="stat-meta">
+                    {% if state.dataset_path %}
+                    {{ state.rows }} rows &middot; {{ state.columns_count }} columns<br>
+                    <span class="fingerprint mono">{% if state.dataset_fingerprint %}fingerprint {{ state.dataset_fingerprint[:12] }}&hellip;{% endif %}</span>
+                    {% else %}Upload a CSV in the Dataset section.{% endif %}
+                </p>
             </div>
             <div class="card">
-                <h3>Total Records</h3>
-                <p>{% if state.rows %}{{ state.rows }}{% else %}0{% endif %}</p>
+                <span class="stat-label">Latest training</span>
+                <p class="stat-value">{% if state.task_type %}{{ state.task_type|capitalize }}{% else %}&mdash;{% endif %}</p>
+                <p class="stat-meta">
+                    {% if state.task_type %}
+                    target: {{ state.target }}<br>
+                    selection: {{ state.primary_metric }} ({{ state.metric_direction }})
+                    {% else %}No training has been run yet.{% endif %}
+                </p>
+                {% if state.reliability and state.reliability.warnings %}
+                <span class="badge badge-warn">{{ state.reliability.warnings|length }} evaluation notice(s)</span>
+                {% endif %}
             </div>
             <div class="card">
-                <h3>Trained Candidates</h3>
-                <p>{{ state.results|length }}</p>
+                <span class="stat-label">Best model</span>
+                <p class="stat-value">{% if state.best_model %}{{ state.best_model.model }}{% else %}&mdash;{% endif %}</p>
+                <p class="stat-meta">
+                    {% if state.best_model %}
+                    status: <span class="badge badge-ok">{{ state.best_model.status }}</span><br>
+                    run <code>{{ state.best_model.run_id }}</code>
+                    {% if state.active_model and state.active_model.registry_version %}<br>registry v{{ state.active_model.registry_version }}{% endif %}
+                    {% else %}No model selected yet.{% endif %}
+                </p>
             </div>
             <div class="card">
-                <h3>Deployment Status</h3>
-                <p>{% if state.best_model %}Active{% else %}Inactive{% endif %}</p>
+                <span class="stat-label">Key metrics ({{ state.primary_metric if state.primary_metric else "validation" }})</span>
+                {% if state.best_model and state.best_model.metrics %}
+                    <p class="stat-value">{% if state.best_model.primary is not none %}{{ state.best_model.primary|round(4) }}{% else %}&mdash;{% endif %} <span style="font-size:.8rem;color:var(--ink-faint)">{{ state.primary_metric }}</span></p>
+                    <p class="stat-meta">
+                    {% for key, value in state.best_model.metrics.items() %}
+                        {{ key }}: {% if value is none %}&mdash;{% else %}{{ value|round(4) }}{% endif %}{{ "" if loop.last else " &middot; " }}
+                    {% endfor %}
+                    </p>
+                {% else %}
+                    <p class="stat-meta">Train a model to see real evaluation metrics.</p>
+                {% endif %}
             </div>
+        </div>
+    </section>
+
+    <!-- ============ 2. DATASET MANAGEMENT ============ -->
+    <section id="dataset" aria-labelledby="dataset-title" style="margin-top:1.6rem;">
+        <h2 class="section-title" id="dataset-title">1. Dataset management</h2>
+        <p class="section-sub">Upload a UTF-8 CSV (max 10 MiB). The server validates structure, profiles columns, and stores the file securely.</p>
+
+        <div class="card">
+            <h3>Upload dataset</h3>
+            <form id="uploadForm" novalidate>
+                <label for="csvFile">CSV file</label>
+                <input type="file" id="csvFile" accept=".csv,text/csv" required>
+                <div class="field-hint">Only .csv files are accepted. Headers must be unique and rows consistent.</div>
+                <div class="progress" id="uploadProgress" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="progress-bar" id="uploadProgressBar"></div>
+                </div>
+                <button type="submit" class="btn" id="uploadButton">Upload and process</button>
+            </form>
+            <div id="uploadMessages" aria-live="polite"></div>
         </div>
 
-        <div class="section">
-            <h2>1. Dataset Intake & Profiling</h2>
-            <form id="uploadForm">
-                <input type="file" name="file" id="csvFile" required accept=".csv">
-                <button type="submit" class="btn">Upload and Process Dataset</button>
-            </form>
-                         
-            {% if state.columns %}
-            <h3>Tabular Metadata Profile Summary</h3>
-            <p><strong>Dimensions:</strong> {{ state.rows }} Rows | {{ state.columns_count }} Columns</p>
-            <table>
-                <thead>
-                    <tr><th>Column Name</th><th>Inferred Type</th><th>Missingness</th></tr>
-                </thead>
-                <tbody>
-                    {% for col in state.columns %}
-                    <tr><td>{{ col.name }}</td><td>{{ col.type }}</td><td>{{ col.missing }}</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% endif %}
+        <div class="card" id="previewCard">
+            <h3>Dataset preview &amp; column summary</h3>
+            <div id="datasetMessages" aria-live="polite"></div>
+            <div id="preview"></div>
         </div>
+    </section>
+
+    <!-- ============ 3. MODEL TRAINING ============ -->
+    <section id="training" aria-labelledby="training-title" style="margin-top:1.6rem;">
+        <h2 class="section-title" id="training-title">2. Model training</h2>
+        <p class="section-sub">Train a baseline, a linear model, and a Random Forest on an 80/20 train/validation split; the best candidate is selected automatically.</p>
 
         {% if state.dataset_path %}
-        <div class="section">
-            <h2>2. Pipeline Configuration & Execution</h2>
-            <form id="trainForm">
-                <label for="target">Target Variable Column:</label>
-                <select name="target" id="target">
-                    {% for col in state.columns %}
-                    <option value="{{ col.name }}">{{ col.name }}</option>
-                    {% endfor %}
-                </select>
-                                 
-                <label for="task_type" style="margin-top: 10px; display: block;">Learning Target Objective Task Type:</label>
-                <select name="task_type" id="task_type">
-                    <option value="classification">Classification</option>
-                    <option value="regression">Regression</option>
-                </select>
-                                 
-                <button type="submit" class="btn" style="margin-top: 15px;">Trigger Optimization Run Pipeline</button>
+        <div class="card">
+            <h3>Training configuration</h3>
+            <form id="trainForm" novalidate>
+                <div class="field-grid">
+                    <div>
+                        <label for="target">Target column</label>
+                        <select name="target" id="target" required>
+                            {% for col in state.columns %}
+                            <option value="{{ col.name }}">{{ col.name }} ({{ col.type }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="field-hint">Populated from the uploaded dataset columns.</div>
+                    </div>
+                    <div>
+                        <label for="task_type">Task type</label>
+                        <select name="task_type" id="task_type">
+                            <option value="classification">Classification</option>
+                            <option value="regression">Regression</option>
+                        </select>
+                        <div class="field-hint">Classification selects by F1 (maximize); regression by RMSE (minimize).</div>
+                    </div>
+                </div>
+                <p class="field-hint" style="margin-top:.7rem;">
+                    Fixed pipeline configuration: 80/20 stratified split (classification only) &middot; random seed 42 &middot; median imputation + scaling for linear models &middot; one-hot encoding with unknown-category handling.
+                </p>
+                <button type="submit" class="btn" id="trainButton">Train models</button>
+                <span id="trainElapsed" class="badge badge-neutral" hidden>0s</span>
             </form>
+            <div id="trainMessages" aria-live="polite"></div>
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="empty">No dataset available. Upload a CSV file in the Dataset section to enable training.</div>
         </div>
         {% endif %}
 
-        {% if state.results %}
-        <div class="section">
-            <h2>3. Experiment Comparison Matrix (MLflow Records Stack)</h2>
-            <p><strong>Run Group Experiment Context Identifier:</strong> {{ state.run_group }}</p>
-            <table>
-                <thead>
-                    <tr><th>Candidate Algorithm</th><th>Primary Target Score</th><th>Metrics Tracked Details</th><th>Run Registry ID</th></tr>
-                </thead>
-                <tbody>
-                    {% for res in state.results %}
-                    <tr style="{% if res.run_id == state.best_model.run_id %}background: #f0fdf4; font-weight: bold;{% endif %}">
-                        <td>{{ res.model }} {% if res.run_id == state.best_model.run_id %}(Best Selected)*{% endif %}</td>
-                        <td>{{ res.primary|round(4) }}</td>
-                        <td>{{ res.metrics }}</td>
-                        <td><code>{{ res.run_id }}</code></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="card">
+            <h3>Evaluated model comparison</h3>
+            {% if state.results %}
+                {% if state.reliability and state.reliability.warnings %}
+                <div class="notice notice-warn">
+                    <strong>Evaluation notices</strong>
+                    <ul style="margin:.3rem 0 0 1rem;">
+                        {% for warning in state.reliability.warnings %}
+                        <li>{{ warning }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                <div class="table-scroll">
+                    <table>
+                        <caption class="field-hint" style="text-align:left;margin-bottom:.3rem;">
+                            Run group {{ state.run_group }}{% if state.primary_metric %} &middot; primary metric {{ state.primary_metric }} ({{ state.metric_direction }}){% endif %}
+                        </caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Candidate</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Primary score</th>
+                                <th scope="col">Validation metrics</th>
+                                <th scope="col">Run ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for res in state.results %}
+                            <tr class="{% if res.run_id == state.best_model.run_id %}row-highlight{% elif res.status == 'failed' %}row-failed{% endif %}">
+                                <td>
+                                    <strong>{{ res.model }}</strong>
+                                    {% if res.run_id == state.best_model.run_id %}<span class="badge badge-ok">selected</span>{% endif %}<br>
+                                    <span class="field-hint">{{ res.role|default("candidate") }}{% if res.hyperparameters %} &middot; {{ res.hyperparameters }}{% endif %}</span>
+                                    {% if res.status == 'failed' and res.error %}
+                                        <div class="error-note">{{ res.error.type }}: {{ res.error.message }}</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if res.status == 'success' %}
+                                    <span class="badge badge-finished">SUCCESS</span>
+                                    {% else %}
+                                    <span class="badge badge-failed">FAILED</span>
+                                    {% endif %}
+                                </td>
+                                <td>{% if res.status == 'success' and res.primary is not none %}{{ res.primary|round(4) }}{% else %}&mdash;{% endif %}</td>
+                                <td>
+                                    {% if res.status == 'success' %}
+                                        {% for key, value in res.metrics.items() %}
+                                        <div>{{ key }}: {% if value is none %}&mdash;{% else %}{{ value|round(4) }}{% endif %}</div>
+                                        {% endfor %}
+                                        {% if res.confusion_matrix %}
+                                        <details class="matrix">
+                                            <summary>Confusion matrix ({{ res.confusion_matrix.labels|join(", ") }})</summary>
+                                            <pre>{{ res.confusion_matrix.matrix }}</pre>
+                                        </details>
+                                        {% endif %}
+                                    {% else %}
+                                        &mdash;
+                                    {% endif %}
+                                </td>
+                                <td><code>{{ res.run_id }}</code></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty">No evaluated models yet. Run training to generate real results.</div>
+            {% endif %}
         </div>
-                 
-        <div class="section">
-            <h2>4. Live API Endpoint Serving Verification Tester</h2>
-            <p>Endpoint URL target: <code>POST /predict</code></p>
-            <p>Input Dynamic Schema Parameters:</p>
-            <textarea id="predictPayload">{"features": {}}</textarea>
-            <button onclick="sendPrediction()" class="btn" style="margin-top: 10px;">Submit Serving Verification Request</button>
-            <h3>Real-time Response Summary Payload Result:</h3>
-            <pre id="predictResult">Pending user input payload...</pre>
+    </section>
+
+    <!-- ============ 4. EXPERIMENTS ============ -->
+    <section id="experiments" aria-labelledby="experiments-title" style="margin-top:1.6rem;">
+        <h2 class="section-title" id="experiments-title">3. Experiments</h2>
+        <p class="section-sub">Runs recorded in the MLflow tracking store by AutoFlow training. Refresh after a new training run.</p>
+        <div class="card">
+            <button type="button" class="btn btn-secondary" id="refreshExperiments">&Applications; Refresh experiments</button>
+            <div id="experimentMessages" aria-live="polite"></div>
+            <div id="experimentResults" style="margin-top:.8rem;"></div>
+        </div>
+    </section>
+
+    <!-- ============ 5. PREDICTIONS ============ -->
+    <section id="predictions" aria-labelledby="predictions-title" style="margin-top:1.6rem;">
+        <h2 class="section-title" id="predictions-title">4. Predictions</h2>
+        <p class="section-sub">Inputs are generated from the active model's trained feature contract; preprocessing matches training exactly.</p>
+        {% if state.best_model or state.active_model %}
+        <div class="card">
+            <h3>Active model</h3>
+            <p class="stat-meta" id="modelBanner">
+                {% if state.best_model and state.best_model.model %}
+                <strong>{{ state.best_model.model }}</strong>
+                {% endif %}
+                {% if state.task_type %} &middot; {{ state.task_type }}{% endif %}
+                {% if state.best_model and state.best_model.run_id %} &middot; run <code>{{ state.best_model.run_id }}</code>{% endif %}
+                {% if state.active_model and state.active_model.registry_version %} &middot; registry v{{ state.active_model.registry_version }}{% endif %}
+            </p>
+            <div id="schemaMessages" aria-live="polite"></div>
+            <form id="predictForm" novalidate>
+                <div class="field-grid" id="predictFields"></div>
+                <button type="submit" class="btn" id="predictButton" style="margin-top:.9rem;">Predict</button>
+            </form>
+            <div id="predictMessages" aria-live="polite"></div>
+            <div id="predictResult"></div>
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="empty">No trained model yet. Train a model first, and the prediction form will be generated from its feature contract.</div>
         </div>
         {% endif %}
-    </div>
+    </section>
 
-    <script>
-        document.getElementById('uploadForm')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData();
-            formData.append('file', document.getElementById('csvFile').files[0]);
-            try {
-                const res = await fetch('/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if(data.status === 'success') window.location.reload();
-                else alert(data.detail || "Upload execution failed.");
-            } catch(err) { alert("Error connecting to server."); }
-        });
+    <footer class="help">
+        AutoFlow AI &middot; FastAPI + scikit-learn + MLflow. All numbers are computed by the backend from real datasets and runs.
+    </footer>
+</main>
 
-        document.getElementById('trainForm')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            try {
-                const res = await fetch('/train', { method: 'POST', body: formData });
-                const data = await res.json();
-                if(data.status === 'success') window.location.reload();
-                else alert(data.detail || "Training run failed.");
-            } catch(err) { alert("Error connecting to server."); }
-        });
+<script>
+"use strict";
 
-        async function sendPrediction() {
-            try {
-                const payload = JSON.parse(document.getElementById('predictPayload').value);
-                const res = await fetch('/predict', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
-                document.getElementById('predictResult').innerText = JSON.stringify(data, null, 2);
-            } catch(e) {
-                document.getElementById('predictResult').innerText = "Invalid JSON schema object or request payload layout failure:\n" + e.message;
-            }
+var body = document.body;
+var HAS_DATASET = body.dataset.hasDataset === "true";
+var HAS_MODEL = body.dataset.hasModel === "true";
+
+function errorMessageFromPayload(data, fallback) {
+    if (data && typeof data === "object" && data.detail) {
+        var detail = data.detail;
+        if (typeof detail === "string") {
+            return detail;
         }
-    </script>
+        if (detail.message) {
+            var extra = "";
+            if (Array.isArray(detail.missing_features) && detail.missing_features.length) {
+                extra += " Missing: " + detail.missing_features.join(", ") + ".";
+            }
+            if (Array.isArray(detail.unexpected_features) && detail.unexpected_features.length) {
+                extra += " Unexpected: " + detail.unexpected_features.join(", ") + ".";
+            }
+            if (Array.isArray(detail.invalid_features) && detail.invalid_features.length) {
+                var reasons = detail.invalid_features.map(function (item) {
+                    return item.feature + (item.reason ? " (" + item.reason + ")" : "");
+                }).join("; ");
+                if (reasons) {
+                    extra += " " + reasons + ".";
+                }
+            }
+            if (Array.isArray(detail.failures) && detail.failures.length) {
+                var failureLines = detail.failures.map(function (item) {
+                    var error = item.error || {};
+                    return item.model + ": " + (error.type || "") + (error.message ? " - " + error.message : "");
+                }).join("; ");
+                if (failureLines) {
+                    extra += " " + failureLines;
+                }
+            }
+            return detail.message + extra;
+        }
+        return JSON.stringify(detail);
+    }
+    return fallback;
+}
+
+function fetchJSON(url, options) {
+    return fetch(url, options).then(function (response) {
+        return response
+            .json()
+            .catch(function () {
+                return null;
+            })
+            .then(function (data) {
+                return { ok: response.ok, status: response.status, data: data };
+            });
+    });
+}
+
+function setNotice(container, kind, message) {
+    container.innerHTML = "";
+    var notice = document.createElement("div");
+    notice.className = "notice notice-" + kind;
+    notice.textContent = message;
+    container.appendChild(notice);
+}
+
+function clearNotice(container) {
+    container.innerHTML = "";
+}
+
+function setBusy(button, busy) {
+    if (!button) {
+        return;
+    }
+    button.disabled = busy;
+    button.classList.toggle("is-busy", busy);
+}
+
+function formatNumber(value) {
+    if (value === null || value === undefined || typeof value !== "number") {
+        return value === null || value === undefined ? "\u2014" : String(value);
+    }
+    if (!isFinite(value)) {
+        return String(value);
+    }
+    return value.toFixed(4).replace(/\.?0+$/, "") || "0";
+}
+
+function formatTimestamp(millis) {
+    if (!millis) {
+        return "\u2014";
+    }
+    try {
+        return new Date(millis).toLocaleString();
+    } catch (error) {
+        return String(millis);
+    }
+}
+
+function badgeHTML(status) {
+    var text = String(status || "UNKNOWN").toUpperCase();
+    var map = {
+        "FINISHED": "badge-finished",
+        "FAILED": "badge-failed",
+        "RUNNING": "badge-running",
+        "SCHEDULED": "badge-running",
+        "KILLED": "badge-failed"
+    };
+    return '<span class="badge ' + (map[text] || "badge-neutral") + '">' + text + "</span>";
+}
+
+/* ---------------- Dataset upload (with progress) ---------------- */
+
+function handleUploadSubmit(event) {
+    event.preventDefault();
+    var input = document.getElementById("csvFile");
+    var button = document.getElementById("uploadButton");
+    var messages = document.getElementById("uploadMessages");
+    var progress = document.getElementById("uploadProgress");
+    var progressBar = document.getElementById("uploadProgressBar");
+
+    clearNotice(messages);
+    if (!input.files || input.files.length === 0) {
+        setNotice(messages, "error", "Select a CSV file before uploading.");
+        input.focus();
+        return;
+    }
+
+    setBusy(button, true);
+    progress.classList.add("active");
+    progressBar.style.width = "0%";
+    progress.setAttribute("aria-valuenow", "0");
+
+    var formData = new FormData();
+    formData.append("file", input.files[0]);
+
+    var request = new XMLHttpRequest();
+    request.open("POST", "/upload");
+
+    request.upload.addEventListener("progress", function (progressEvent) {
+        if (progressEvent.lengthComputable) {
+            var percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+            progressBar.style.width = percent + "%";
+            progress.setAttribute("aria-valuenow", String(percent));
+        }
+    });
+
+    request.addEventListener("load", function () {
+        var success = request.status >= 200 && request.status < 300;
+        var data = null;
+        try {
+            data = JSON.parse(request.responseText);
+        } catch (parseError) {
+            data = null;
+        }
+        progress.classList.remove("active");
+        setBusy(button, false);
+        if (success) {
+            setNotice(messages, "ok", "Dataset uploaded and profiled. Reloading...");
+            window.location.reload();
+        } else {
+            setNotice(messages, "error", errorMessageFromPayload(data, "Upload failed (HTTP " + request.status + ")."));
+        }
+    });
+
+    request.addEventListener("error", function () {
+        progress.classList.remove("active");
+        setBusy(button, false);
+        setNotice(messages, "error", "Network error while uploading. Please retry.");
+    });
+
+    request.send(formData);
+}
+
+document.getElementById("uploadForm").addEventListener("submit", handleUploadSubmit);
+
+/* ---------------- Dataset preview ---------------- */
+
+function renderDatasetPreview(data) {
+    var container = document.getElementById("preview");
+    container.innerHTML = "";
+
+    var summary = document.createElement("p");
+    summary.className = "field-hint";
+    summary.textContent = "Showing " + data.preview_rows + " of " + data.shape.rows + " rows (" + data.shape.columns + " columns).";
+    container.appendChild(summary);
+
+    var scroll = document.createElement("div");
+    scroll.className = "table-scroll";
+
+    var table = document.createElement("table");
+    var thead = document.createElement("thead");
+    var headerRow = document.createElement("tr");
+    data.columns.forEach(function (column) {
+        var th = document.createElement("th");
+        th.scope = "col";
+        th.textContent = column.name;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement("tbody");
+    data.rows.forEach(function (record) {
+        var row = document.createElement("tr");
+        data.columns.forEach(function (column) {
+            var cell = document.createElement("td");
+            var value = record[column.name];
+            if (value === null || value === undefined) {
+                cell.textContent = "null";
+                cell.style.color = "var(--ink-faint)";
+                cell.style.fontStyle = "italic";
+            } else {
+                cell.textContent = String(value);
+            }
+            row.appendChild(cell);
+        });
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    scroll.appendChild(table);
+    container.appendChild(scroll);
+
+    var caption = document.createElement("h3");
+    caption.textContent = "Column types and missing values (full dataset)";
+    caption.style.marginTop = "1rem";
+    container.appendChild(caption);
+
+    var metaScroll = document.createElement("div");
+    metaScroll.className = "table-scroll";
+    var metaTable = document.createElement("table");
+    var metaHead = document.createElement("thead");
+    var metaHeaderRow = document.createElement("tr");
+    ["Column", "Inferred type", "Data type", "Missing values", "Missing %"].forEach(function (heading) {
+        var th = document.createElement("th");
+        th.scope = "col";
+        th.textContent = heading;
+        metaHeaderRow.appendChild(th);
+    });
+    metaHead.appendChild(metaHeaderRow);
+    metaTable.appendChild(metaHead);
+    var metaBody = document.createElement("tbody");
+    data.columns.forEach(function (column) {
+        var row = document.createElement("tr");
+        [column.name, column.kind, column.dtype, String(column.missing), column.missing_percentage + "%"].forEach(function (text, index) {
+            var cell = document.createElement("td");
+            cell.textContent = text;
+            if (index === 0) {
+                cell.style.fontWeight = "600";
+            }
+            row.appendChild(cell);
+        });
+        metaBody.appendChild(row);
+    });
+    metaTable.appendChild(metaBody);
+    metaScroll.appendChild(metaTable);
+    container.appendChild(metaScroll);
+}
+
+var datasetMessages = document.getElementById("datasetMessages");
+clearNotice(datasetMessages);
+
+if (HAS_DATASET) {
+    fetchJSON("/api/dataset/preview?rows=10")
+        .then(function (result) {
+            if (result.ok) {
+                clearNotice(datasetMessages);
+                renderDatasetPreview(result.data);
+            } else {
+                setNotice(datasetMessages, "error", errorMessageFromPayload(result.data, "The dataset preview could not be loaded (HTTP " + result.status + ")."));
+            }
+        })
+        .catch(function () {
+            setNotice(datasetMessages, "error", "Network error while loading the dataset preview.");
+        });
+} else {
+    var emptyPreview = document.createElement("div");
+    emptyPreview.className = "empty";
+    emptyPreview.textContent = "No dataset available yet. Upload a CSV file above to see a preview, data types, and missing-value summary.";
+    document.getElementById("preview").appendChild(emptyPreview);
+}
+
+/* ---------------- Training ---------------- */
+
+function handleTrainSubmit(event) {
+    event.preventDefault();
+    var form = document.getElementById("trainForm");
+    var button = document.getElementById("trainButton");
+    var messages = document.getElementById("trainMessages");
+    var elapsed = document.getElementById("trainElapsed");
+    var formData = new FormData(form);
+
+    clearNotice(messages);
+    if (!formData.get("target")) {
+        setNotice(messages, "error", "Select a target column before training.");
+        return;
+    }
+
+    setBusy(button, true);
+    if (elapsed) {
+        elapsed.hidden = false;
+    }
+    var startedAt = Date.now();
+    var timer = window.setInterval(function () {
+        elapsed.textContent = Math.round((Date.now() - startedAt) / 1000) + "s";
+    }, 1000);
+    setNotice(messages, "neutral", "Training baseline, linear and forest candidates on an 80/20 validation split. This page reloads when finished.");
+
+    fetchJSON("/train", { method: "POST", body: formData })
+        .then(function (result) {
+            window.clearInterval(timer);
+            setBusy(button, false);
+            if (elapsed) {
+                elapsed.hidden = true;
+            }
+            if (result.ok) {
+                setNotice(messages, "ok", "Training finished. Reloading with the new comparison...");
+                window.location.reload();
+            } else {
+                setNotice(messages, "error", errorMessageFromPayload(result.data, "Training failed (HTTP " + result.status + ")."));
+            }
+        })
+        .catch(function () {
+            window.clearInterval(timer);
+            setBusy(button, false);
+            setNotice(messages, "error", "Network error during training. Check the server logs and retry.");
+        });
+}
+
+var trainForm = document.getElementById("trainForm");
+if (trainForm) {
+    trainForm.addEventListener("submit", handleTrainSubmit);
+}
+
+/* ---------------- Experiments ---------------- */
+
+function renderExperiments(data) {
+    var container = document.getElementById("experimentResults");
+    container.innerHTML = "";
+
+    if (!data.runs || data.runs.length === 0) {
+        var empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No MLflow runs recorded yet. Train a model to create real experiment records.";
+        container.appendChild(empty);
+        return;
+    }
+
+    var header = document.createElement("p");
+    header.className = "field-hint";
+    header.textContent = "Showing the " + data.count + " most recent AutoFlow run(s) from " + data.experiments + " experiment(s).";
+    container.appendChild(header);
+
+    var scroll = document.createElement("div");
+    scroll.className = "table-scroll";
+    var table = document.createElement("table");
+    var thead = document.createElement("thead");
+    var headerRow = document.createElement("tr");
+    ["Experiment", "Run (model)", "Status", "Started", "Primary metric", "Run ID"].forEach(function (heading) {
+        var th = document.createElement("th");
+        th.scope = "col";
+        th.textContent = heading;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement("tbody");
+    data.runs.forEach(function (run) {
+        var row = document.createElement("tr");
+        if (run.status === "FAILED") {
+            row.className = "row-failed";
+        }
+
+        var experimentCell = document.createElement("td");
+        experimentCell.textContent = run.experiment;
+        row.appendChild(experimentCell);
+
+        var runCell = document.createElement("td");
+        var runName = document.createElement("strong");
+        runName.textContent = run.run_name || "";
+        runCell.appendChild(runName);
+        if (!run.run_name) {
+            var unnamed = document.createElement("em");
+            unnamed.textContent = "unnamed run";
+            runCell.appendChild(unnamed);
+        }
+        if (run.task_type) {
+            var kind = document.createElement("div");
+            kind.className = "field-hint";
+            kind.textContent = run.task_type;
+            runCell.appendChild(kind);
+        }
+        if (run.error) {
+            var errorLine = document.createElement("div");
+            errorLine.className = "error-note";
+            errorLine.textContent = run.error;
+            errorLine.title = "Run error";
+            runCell.appendChild(errorLine);
+        }
+        row.appendChild(runCell);
+
+        var statusCell = document.createElement("td");
+        statusCell.innerHTML = badgeHTML(run.status);
+        row.appendChild(statusCell);
+
+        var startedCell = document.createElement("td");
+        startedCell.textContent = formatTimestamp(run.start_time);
+        row.appendChild(startedCell);
+
+        var metricCell = document.createElement("td");
+        if (run.primary_metric) {
+            metricCell.textContent = run.primary_metric + ": " + formatNumber(run.primary_value);
+        } else {
+            metricCell.textContent = "\u2014";
+        }
+        row.appendChild(metricCell);
+
+        var runIdCell = document.createElement("td");
+        var runIdCode = document.createElement("code");
+        runIdCode.textContent = run.run_id;
+        runIdCell.appendChild(runIdCode);
+        row.appendChild(runIdCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    scroll.appendChild(table);
+    container.appendChild(scroll);
+}
+
+var experimentMessages = document.getElementById("experimentMessages");
+
+function loadExperiments() {
+    var button = document.getElementById("refreshExperiments");
+    setBusy(button, true);
+    clearNotice(experimentMessages);
+    fetchJSON("/api/experiments?limit=25")
+        .then(function (result) {
+            setBusy(button, false);
+            if (result.ok) {
+                renderExperiments(result.data);
+            } else {
+                setNotice(experimentMessages, "error", errorMessageFromPayload(result.data, "Experiment history could not be loaded (HTTP " + result.status + ")."));
+            }
+        })
+        .catch(function () {
+            setBusy(button, false);
+            setNotice(experimentMessages, "error", "Network error while loading experiment history.");
+        });
+}
+
+document.getElementById("refreshExperiments").addEventListener("click", loadExperiments);
+loadExperiments();
+
+/* ---------------- Predictions ---------------- */
+
+var schemaMessages = document.getElementById("schemaMessages");
+var predictFields = document.getElementById("predictFields");
+var predictMessages = document.getElementById("predictMessages");
+var predictResult = document.getElementById("predictResult");
+
+function describeSchemaError(detail) {
+    if (detail && detail.message) {
+        var parts = [];
+        if (Array.isArray(detail.missing_features) && detail.missing_features.length) {
+            parts.push("Missing: " + detail.missing_features.join(", "));
+        }
+        if (Array.isArray(detail.unexpected_features) && detail.unexpected_features.length) {
+            parts.push("Unexpected: " + detail.unexpected_features.join(", "));
+        }
+        if (Array.isArray(detail.invalid_features) && detail.invalid_features.length) {
+            detail.invalid_features.forEach(function (item) {
+                parts.push(item.feature + ": " + (item.reason || "invalid value"));
+            });
+        }
+        return detail.message + (parts.length ? " — " + parts.join(" | ") : "");
+    }
+    return typeof detail === "string" ? detail : "Prediction failed.";
+}
+
+function renderPredictionError(data, status, fallbackMessage) {
+    clearNotice(predictMessages);
+    var notice = document.createElement("div");
+    notice.className = "notice notice-error";
+    notice.textContent = describeSchemaError(data && data.detail) || fallbackMessage;
+    predictMessages.appendChild(notice);
+}
+
+function validateNumericInput(input, sendNull) {
+    if (sendNull) {
+        return null;
+    }
+    var raw = input.value.trim();
+    if (raw === "") {
+        return "This numeric feature is required. Enter a number, or use the missing option.";
+    }
+    var parsed = Number(raw);
+    if (isNaN(parsed) || !isFinite(parsed)) {
+        return "Numbers only (no booleans or text).";
+    }
+    return null;
+}
+
+// Empty strings are valid categorical values on the backend (one-hot encoding
+// treats them like any other category), so no additional validation is applied.
+function validateCategoricalInput(input) {
+    return null;
+}
+
+function buildPredictFields(features) {
+    predictFields.innerHTML = "";
+    features.forEach(function (feature, index) {
+        // Index-based identifier keeps the markup valid even when feature
+        // names contain spaces or quotes.
+        var fieldId = "feature-" + index;
+
+        var wrapper = document.createElement("div");
+        wrapper.dataset.featureName = feature.name;
+
+        var label = document.createElement("label");
+        label.setAttribute("for", fieldId);
+        label.textContent = feature.name;
+        wrapper.appendChild(label);
+
+        var isNumeric = feature.kind === "numeric";
+        var input = document.createElement("input");
+        input.id = fieldId;
+        input.dataset.featureName = feature.name;
+        input.name = feature.name;
+        input.autocomplete = "off";
+        if (isNumeric) {
+            input.type = "number";
+            input.step = "any";
+        } else {
+            input.type = "text";
+        }
+        wrapper.appendChild(input);
+
+        var hint = document.createElement("div");
+        hint.className = "field-hint";
+        hint.textContent = isNumeric
+            ? "numeric" + (feature.kind ? "" : " (type not specified)")
+            : "categorical";
+        wrapper.appendChild(hint);
+
+        var toggleWrap = document.createElement("label");
+        toggleWrap.className = "missing-toggle";
+        var toggle = document.createElement("input");
+        toggle.type = "checkbox";
+        toggle.dataset.featureName = feature.name;
+        toggle.className = "missing-toggle-box";
+        toggleWrap.appendChild(toggle);
+        toggleWrap.appendChild(document.createTextNode("mark as missing (null)"));
+        wrapper.appendChild(toggleWrap);
+
+        predictFields.appendChild(wrapper);
+    });
+}
+
+function collectPredictionPayload() {
+    var problems = [];
+    var features = {};
+    var toggles = {};
+    document.querySelectorAll(".missing-toggle-box").forEach(function (box) {
+        toggles[box.dataset.featureName] = box.checked;
+    });
+
+    predictFields.querySelectorAll("div[data-feature-name]").forEach(function (wrapper) {
+        var name = wrapper.dataset.featureName;
+        // querySelector returns the first input in DOM order: the feature
+        // input (the "mark as missing" checkbox is appended afterwards).
+        var input = wrapper.querySelector("input");
+
+        var sendNull = toggles[name] === true;
+        if (sendNull) {
+            features[name] = null;
+            return;
+        }
+        var validationError = input.type === "number"
+            ? validateNumericInput(input, sendNull)
+            : validateCategoricalInput(input);
+        if (validationError) {
+            problems.push({ field: name, message: validationError });
+            return;
+        }
+        var raw = input.value.trim();
+        features[name] = input.type === "number" ? Number(raw) : raw;
+    });
+
+    if (problems.length > 0) {
+        predictMessages.innerHTML = "";
+        var notice = document.createElement("div");
+        notice.className = "notice notice-error";
+        notice.textContent = problems
+            .map(function (problem) { return problem.field + ": " + problem.message; })
+            .join("\n");
+        predictMessages.appendChild(notice);
+        predictMessages.setAttribute("role", "alert");
+        return null;
+    }
+    predictMessages.setAttribute("role", "status");
+    predictResult.setAttribute("aria-live", "polite");
+    clearNotice(predictMessages);
+    return features;
+}
+
+function showPredictionOutcome(response) {
+    predictResult.innerHTML = "";
+    var card = document.createElement("div");
+    card.className = "notice notice-ok";
+    if (typeof response.prediction !== "undefined") {
+        card.textContent = "Prediction: " + String(response.prediction);
+        card.appendChild(document.createElement("br"));
+        card.appendChild(document.createTextNode("model run: " + response.model_version + ", registry v" + (response.registry_version === null ? "\u2014" : response.registry_version)));
+    } else {
+        card.textContent = "Prediction request completed: " + JSON.stringify(response);
+    }
+    predictResult.appendChild(card);
+}
+
+function handlePredictSubmit(event) {
+    event.preventDefault();
+    var button = document.getElementById("predictButton");
+    var features = collectPredictionPayload();
+    if (features === null) {
+        return;
+    }
+
+    setBusy(button, true);
+    fetchJSON("/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ features: features })
+    })
+        .then(function (result) {
+            setBusy(button, false);
+            if (result.ok) {
+                clearNotice(predictMessages);
+                showPredictionOutcome(result.data);
+            } else {
+                renderPredictionError(result.data, result.status, "Prediction failed (HTTP " + result.status + ").");
+            }
+        })
+        .catch(function () {
+            setBusy(button, false);
+            setNotice(predictMessages, "error", "Network error while requesting a prediction.");
+        });
+}
+
+var predictForm = document.getElementById("predictForm");
+if (predictForm) {
+    predictForm.addEventListener("submit", handlePredictSubmit);
+}
+
+if (HAS_MODEL) {
+    clearNotice(schemaMessages);
+    fetchJSON("/api/model/schema")
+        .then(function (result) {
+            if (result.ok && result.data && result.data.available) {
+                buildPredictFields(result.data.features);
+                if (result.data.model_name) {
+                    var banner = document.getElementById("modelBanner");
+                    if (banner && !banner.querySelector("strong")) {
+                        banner.innerHTML = "<strong>" + result.data.model_name + "</strong>" + banner.innerHTML;
+                    }
+                }
+            } else {
+                renderPredictionError(result.data, result.status, "The prediction schema could not be loaded.");
+            }
+        })
+        .catch(function () {
+            setNotice(schemaMessages, "error", "Network error while loading the model schema.");
+        });
+} else if (predictFields) {
+    var schemaEmpty = document.createElement("div");
+    schemaEmpty.className = "empty";
+    schemaEmpty.textContent = "Train a model first; prediction inputs are generated from its real feature contract.";
+    predictFields.appendChild(schemaEmpty);
+}
+</script>
 </body>
 </html>

@@ -1,0 +1,19 @@
+# Convenience orchestration for local/production-style deployment with
+# persistent storage. Start with: docker compose up -d --build
+services:
+  autoflow:
+    build: .
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      # Uploads, runtime state file, and the MLflow tracking database.
+      - autoflow-data:/app/data
+      # MLflow artifact store (training artifacts and logged models).
+      - autoflow-mlruns:/app/mlruns
+    # Optional: point MLFLOW_ARTIFACT_DIR/MLFLOW_TRACKING_URI at external
+    # stores via environment overrides; see .env.example.
+
+volumes:
+  autoflow-data:
+  autoflow-mlruns:

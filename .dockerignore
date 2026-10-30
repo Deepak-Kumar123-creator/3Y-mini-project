@@ -1,0 +1,36 @@
+# Version control
+.git/
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+
+# Python build/test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Application-managed data: never bake datasets, experiment history, trained
+# models, or runtime state into the image; they belong in persistent volumes.
+uploads/
+mlruns/
+mlflow.db
+autoflow_state.json
+data/
+
+# Local configuration (may contain deployment-specific values)
+.env
+
+# Tests and docs are not needed inside the runtime image
+tests/
+
+# Operating system noise
+Thumbs.db
+.DS_Store
+
+# Docker files themselves are not part of the build context of other images
+Dockerfile
+.dockerignore
+docker-compose.yml
