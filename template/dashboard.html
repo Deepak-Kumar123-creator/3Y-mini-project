@@ -1,0 +1,98 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoFlow — AutoML Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#"><span class="brand-mark">A</span><span>Auto<span class="brand-light">Flow</span><small> AUTOML WORKSPACE</small></span></a>
+      <div class="workspace-label">WORKSPACE</div>
+      <nav class="nav">
+        <button class="nav-link active" data-page="overview"><span>▦</span> Overview</button>
+        <button class="nav-link" data-page="dataset"><span>▤</span> Dataset</button>
+        <button class="nav-link" data-page="analysis"><span>⌁</span> Data analysis</button>
+        <button class="nav-link" data-page="training"><span>⚙</span> Training setup</button>
+        <button class="nav-link" data-page="models"><span>◫</span> Model results</button>
+        <button class="nav-link" data-page="predictions"><span>⌘</span> Predictions</button>
+        <button class="nav-link" data-page="history"><span>◷</span> Experiments</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="backend-status"><i></i><span><b>Frontend preview</b><small>Backend not connected</small></span></div>
+        <button class="nav-link" data-page="settings"><span>⚙</span> Settings</button>
+        <div class="user-card"><div class="avatar">AF</div><span><b>AutoFlow User</b><small>Personal workspace</small></span><span class="dots">•••</span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="breadcrumb">Workspace <span>/</span> <b id="crumb">Overview</b></div>
+        <div class="top-actions"><span class="system-pill"><i></i> System ready</span><button class="icon-btn" title="Notifications">♧</button><div class="avatar small">AF</div></div>
+      </header>
+
+      <section class="page active-page" id="page-overview">
+        <div class="page-heading">
+          <div><div class="eyebrow">AUTOMATED MACHINE LEARNING</div><h1>Build models, <span>without the busywork.</span></h1><p>Upload a dataset, understand its patterns, and let AutoFlow guide model selection.</p></div>
+          <button class="primary-btn" id="go-upload">＋ Upload dataset</button>
+        </div>
+        <div class="welcome-strip"><div class="welcome-icon">✦</div><div><b>Your ML workspace is ready</b><p>Start with a CSV file. Dataset inspection works locally in this dashboard preview.</p></div><span class="strip-tag">STEP 01 / 05</span></div>
+        <div class="section-title"><div><h2>Workspace overview</h2><p>Your current project at a glance</p></div><span class="muted">Live session</span></div>
+        <div class="stats-grid">
+          <article class="stat-card"><div class="stat-top"><span>Active dataset</span><span class="stat-icon violet">▤</span></div><strong id="stat-dataset">—</strong><small id="stat-dataset-sub">No dataset uploaded</small></article>
+          <article class="stat-card"><div class="stat-top"><span>Rows detected</span><span class="stat-icon blue">▥</span></div><strong id="stat-rows">0</strong><small>Records in uploaded CSV</small></article>
+          <article class="stat-card"><div class="stat-top"><span>Features</span><span class="stat-icon green">⌗</span></div><strong id="stat-cols">0</strong><small>Columns detected</small></article>
+          <article class="stat-card"><div class="stat-top"><span>Experiments</span><span class="stat-icon orange">◷</span></div><strong>0</strong><small>Training module not connected</small></article>
+        </div>
+        <div class="content-grid">
+          <article class="panel upload-panel">
+            <div class="panel-heading"><div><h3>Start a new workflow</h3><p>Bring your tabular data into AutoFlow</p></div><span class="step-number">01</span></div>
+            <label class="dropzone" id="dropzone" for="csv-file"><div class="upload-symbol">↑</div><b>Drop your CSV file here</b><span>or <u>browse files</u> from your computer</span><small>CSV format · Maximum 20 MB</small><input id="csv-file" type="file" accept=".csv,text/csv" hidden></label>
+            <div class="upload-foot"><span>⌁ Your file is processed in this browser preview</span><span>CSV only</span></div>
+          </article>
+          <article class="panel workflow-panel">
+            <div class="panel-heading"><div><h3>AutoFlow pipeline</h3><p>Planned workflow stages</p></div><span class="status-badge">READY</span></div>
+            <div class="pipeline">
+              <div class="pipeline-step done"><span class="pipeline-dot">✓</span><div><b>Dataset upload</b><small>Import your CSV file</small></div><em>Ready</em></div>
+              <div class="pipeline-step"><span class="pipeline-dot">2</span><div><b>Statistical analysis</b><small>Understand data characteristics</small></div><em>Pending</em></div>
+              <div class="pipeline-step"><span class="pipeline-dot">3</span><div><b>Meta-learning</b><small>Predict one suitable algorithm</small></div><em>Pending</em></div>
+              <div class="pipeline-step"><span class="pipeline-dot">4</span><div><b>Model training</b><small>Train the selected model only</small></div><em>Pending</em></div>
+              <div class="pipeline-step"><span class="pipeline-dot">5</span><div><b>Evaluation & artifacts</b><small>Save metrics and trained model</small></div><em>Pending</em></div>
+            </div>
+          </article>
+        </div>
+        <div class="bottom-note"><span>ⓘ</span><p><b>Current build:</b> Dashboard UI + browser-based CSV preview. FastAPI, statistical analyzer, meta-learning, training, and artifact storage will be connected as independent modules later.</p></div>
+      </section>
+
+      <section class="page" id="page-dataset">
+        <div class="page-heading"><div><div class="eyebrow">DATA MANAGEMENT</div><h1>Dataset <span>workspace</span></h1><p>Upload and inspect your tabular data.</p></div><button class="primary-btn" id="dataset-upload-btn">＋ Upload CSV</button></div>
+        <article class="panel"><div class="panel-heading"><div><h3>Dataset details</h3><p id="dataset-name">No dataset selected</p></div><span class="status-badge" id="dataset-status">WAITING</span></div><div class="empty-state" id="dataset-empty"><div class="empty-icon">▤</div><b>No dataset uploaded yet</b><p>Upload a CSV file to see its dimensions and preview.</p></div><div id="dataset-details" class="hidden"><div class="stats-grid compact"><div class="mini-stat"><small>Rows</small><b id="detail-rows">0</b></div><div class="mini-stat"><small>Columns</small><b id="detail-cols">0</b></div><div class="mini-stat"><small>Missing cells</small><b id="detail-missing">0</b></div><div class="mini-stat"><small>Duplicate rows</small><b id="detail-duplicates">0</b></div></div><div class="table-wrap"><table id="preview-table"></table></div></div></article>
+      </section>
+
+      <section class="page" id="page-analysis">
+        <div class="page-heading"><div><div class="eyebrow">UNDERSTAND YOUR DATA</div><h1>Data <span>analysis</span></h1><p>Basic statistical profile generated from the uploaded CSV.</p></div><button class="primary-btn" id="analyze-btn" disabled>Analyze dataset</button></div>
+        <div class="stats-grid"><article class="stat-card"><div class="stat-top"><span>Numeric columns</span><span class="stat-icon violet">#</span></div><strong id="numeric-count">0</strong><small>Detected from CSV values</small></article><article class="stat-card"><div class="stat-top"><span>Categorical columns</span><span class="stat-icon blue">Aa</span></div><strong id="categorical-count">0</strong><small>Detected from CSV values</small></article><article class="stat-card"><div class="stat-top"><span>Missing values</span><span class="stat-icon orange">!</span></div><strong id="missing-count">0</strong><small>Empty cells</small></article><article class="stat-card"><div class="stat-top"><span>Duplicate rows</span><span class="stat-icon green">⧉</span></div><strong id="duplicate-count">0</strong><small>Exact duplicate records</small></article></div>
+        <article class="panel"><div class="panel-heading"><div><h3>Column profile</h3><p>Type and completeness overview</p></div><span class="muted" id="profile-count">0 columns</span></div><div class="table-wrap"><table id="profile-table"><tr><td class="empty-cell">Upload a CSV file to generate the profile.</td></tr></table></div></article>
+      </section>
+
+      <section class="page" id="page-training">
+        <div class="page-heading"><div><div class="eyebrow">MODEL CONFIGURATION</div><h1>Training <span>setup</span></h1><p>Configure the task before connecting the training engine.</p></div><span class="status-badge">UI PREVIEW</span></div>
+        <div class="content-grid"><article class="panel form-panel"><h3>Problem configuration</h3><p>These settings will later be sent to the FastAPI backend.</p><label>Problem type<select id="problem-type"><option value="auto">Auto-detect from target</option><option value="classification">Classification</option><option value="regression">Regression</option></select></label><label>Target column<select id="target-column" disabled><option>Upload a dataset first</option></select></label><label>Validation strategy<select><option>Train / test split</option><option>Cross-validation</option></select></label><label>Test size <select><option>20%</option><option>25%</option><option>30%</option></select></label><button class="primary-btn full" disabled>Training engine not connected</button></article><article class="panel"><h3>Model selection policy</h3><p class="panel-subtitle">AutoFlow's planned selection process</p><div class="policy-list"><div><span>01</span><section><b>Statistical analyzer</b><small>Inspect dataset size, feature types, imbalance, cardinality and distributions.</small></section></div><div><span>02</span><section><b>Meta-learning engine</b><small>Use extracted meta-features to predict one suitable algorithm.</small></section></div><div><span>03</span><section><b>Single-model training</b><small>Train the predicted algorithm and evaluate it on held-out data.</small></section></div></div><div class="notice">The dashboard does not train a model yet. The backend modules will be connected after they are built and tested independently.</div></article></div>
+      </section>
+
+      <section class="page" id="page-models"><div class="page-heading"><div><div class="eyebrow">EVALUATION</div><h1>Model <span>results</span></h1><p>Review model metrics after a training run.</p></div></div><article class="panel empty-state-panel"><div class="empty-icon">◫</div><h3>No model results yet</h3><p>Connect the trainer and evaluation modules to display the selected model, metrics and evaluation charts.</p></article></section>
+      <section class="page" id="page-predictions"><div class="page-heading"><div><div class="eyebrow">INFERENCE</div><h1>Make <span>predictions</span></h1><p>Generate predictions using a saved model artifact.</p></div></div><article class="panel empty-state-panel"><div class="empty-icon">⌘</div><h3>Prediction API not connected</h3><p>After training, the prediction module will load the saved model and accept new input data.</p></article></section>
+      <section class="page" id="page-history"><div class="page-heading"><div><div class="eyebrow">TRACKING</div><h1>Experiment <span>history</span></h1><p>Track previous training runs and saved artifacts.</p></div></div><article class="panel empty-state-panel"><div class="empty-icon">◷</div><h3>No experiments recorded</h3><p>Experiment tracking and SQLite persistence will be added with the backend.</p></article></section>
+      <section class="page" id="page-settings"><div class="page-heading"><div><div class="eyebrow">PREFERENCES</div><h1>Workspace <span>settings</span></h1><p>Application configuration.</p></div></div><article class="panel"><h3>About AutoFlow</h3><p class="panel-subtitle">An AutoML project for automated dataset inspection, algorithm recommendation, model training and evaluation.</p><div class="settings-row"><span>Dashboard version</span><b>0.1.0 — Frontend</b></div><div class="settings-row"><span>Backend connection</span><b class="warning-text">Not connected</b></div><div class="settings-row"><span>Supported upload</span><b>CSV</b></div></article></section>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="script.js"></script>
+</body>
+</html>
