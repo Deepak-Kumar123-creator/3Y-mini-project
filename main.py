@@ -2,11 +2,13 @@ import csv
 import hashlib
 import io
 import json
+import joblib
 import logging
 import math
 import os
 import re
 import tempfile
+import time
 import uuid
 import warnings
 from pathlib import Path
@@ -16,14 +18,21 @@ import mlflow
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from mlflow.tracking import MlflowClient
 from sklearn.compose import ColumnTransformer
 from sklearn.dummy import DummyClassifier, DummyRegressor
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import (
+    GradientBoostingClassifier,
+    GradientBoostingRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
+)
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -32,12 +41,19 @@ from sklearn.metrics import (
     mean_absolute_error,
     precision_score,
     recall_score,
+    roc_auc_score,
     root_mean_squared_error,
     r2_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.svm import SVC, SVR
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+
+from meta_learning.meta_dataset import MetaDatasetManager
+from meta_learning.meta_feature_extractor import extract_meta_features
+from meta_learning.meta_learner import predict_algorithm, train_meta_model
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -52,11 +68,17 @@ MLFLOW_ARTIFACT_DIR = Path(
     os.environ.get("MLFLOW_ARTIFACT_DIR", str(DATA_DIR / "mlruns"))
 ).resolve()
 STATE_FILE = DATA_DIR / "autoflow_state.json"
+META_DATASET_FILE = DATA_DIR / "meta_data" / "experiments.json"
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 MIN_TRAINING_ROWS = 10
 STATE_VERSION = 1
 # Models are generated locally; user-provided model artifacts are never loaded.
-SKOPS_TRUSTED_MODEL_TYPES = ["numpy.dtype", "sklearn.tree._tree.Tree"]
+SKOPS_TRUSTED_MODEL_TYPES = [
+    "numpy.dtype",
+    "sklearn.tree._tree.Tree",
+    "sklearn.metrics._dist_metrics.EuclideanDistance64",
+    "sklearn.neighbors._kd_tree.KDTree",
+]
 
 # Primary model-selection metrics per task type. The direction states explicitly
 # whether the metric must be maximized or minimized when choosing the best run.
@@ -70,6 +92,9 @@ MIN_RELIABLE_VALIDATION_ROWS = 30
 # Registry under this name, in addition to the persisted state file.
 ACTIVE_MODEL_REGISTRY_NAME = os.environ.get(
     "AUTOFLOW_ACTIVE_MODEL_REGISTRY", "autoflow-active-models"
+)
+META_MODEL_REGISTRY_NAME = os.environ.get(
+    "AUTOFLOW_META_MODEL_REGISTRY", "autoflow-meta-models"
 )
 # MLflow run IDs are always 32 lowercase hex characters. Model loading only
 # accepts run:/ or models:/ URIs whose identifiers pass this validation, so no
@@ -107,6 +132,9 @@ STATE: dict[str, Any] = {
     "reliability": None,
     "feature_schema": None,
     "active_model": None,
+    "task_2": None,
+    "comparison": None,
+    "meta_features": None,
 }
 
 inference_pipeline: Any = None
@@ -341,7 +369,11 @@ def _persist_registry_reference(
         client.set_model_version_tag(registry_name, str(model_version), key, value)
 
 
-def _register_selected_model(best_model: dict[str, Any], task_type: str) -> dict[str, Any]:
+def _register_selected_model(
+    best_model: dict[str, Any],
+    task_type: str,
+    registry_name: str | None = None,
+) -> dict[str, Any]:
     """Register the selected run's complete pipeline in the MLflow Model Registry.
 
     The registry entry (kept in the MLflow backend database) is the durable
@@ -351,10 +383,11 @@ def _register_selected_model(best_model: dict[str, Any], task_type: str) -> dict
     reference.
     """
     run_id = best_model["run_id"]
+    registry_name = registry_name or ACTIVE_MODEL_REGISTRY_NAME
     try:
-        model_version = mlflow.register_model(f"runs:/{run_id}/model", ACTIVE_MODEL_REGISTRY_NAME)
+        model_version = mlflow.register_model(f"runs:/{run_id}/model", registry_name)
         _persist_registry_reference(
-            ACTIVE_MODEL_REGISTRY_NAME,
+            registry_name,
             int(model_version.version),
             run_id,
             task_type,
@@ -362,12 +395,12 @@ def _register_selected_model(best_model: dict[str, Any], task_type: str) -> dict
         _log_event(
             logging.INFO,
             "selected_model_registered",
-            registry_name=ACTIVE_MODEL_REGISTRY_NAME,
+            registry_name=registry_name,
             registry_version=int(model_version.version),
             run_id=run_id,
         )
         return {
-            "registry_name": ACTIVE_MODEL_REGISTRY_NAME,
+            "registry_name": registry_name,
             "registry_version": int(model_version.version),
             "run_id": run_id,
             "task_type": task_type,
@@ -589,26 +622,100 @@ def _parse_csv(contents: bytes) -> pd.DataFrame:
     return dataframe
 
 
+def detect_problem_type(dataframe: pd.DataFrame, target: str) -> dict[str, Any]:
+    """Detect classification versus regression without assuming integers are continuous."""
+    if target not in dataframe.columns:
+        return {"detected": None, "confidence": 0.0, "reason": "Target column was not found."}
+    values = dataframe[target].dropna()
+    if values.empty:
+        return {"detected": None, "confidence": 0.0, "reason": "Target column is empty."}
+    if not pd.api.types.is_numeric_dtype(values):
+        return {
+            "detected": "classification",
+            "confidence": 1.0,
+            "reason": "The target has non-numeric/categorical values.",
+        }
+    unique_count = int(values.nunique())
+    row_count = max(len(values), 1)
+    unique_ratio = unique_count / row_count
+    integer_like = bool(np.all(np.mod(values.to_numpy(dtype=float), 1) == 0))
+    if unique_count <= 20 and unique_ratio <= 0.05:
+        return {
+            "detected": "classification",
+            "confidence": 0.9,
+            "reason": "The numeric target has few discrete values relative to the dataset.",
+        }
+    if integer_like and unique_count <= 100:
+        return {
+            "detected": "classification",
+            "confidence": 0.65,
+            "reason": "The numeric target is discrete, but integer targets should be reviewed.",
+        }
+    return {
+        "detected": "regression",
+        "confidence": 0.85,
+        "reason": "The target is continuous or has too many numeric levels for a class-label heuristic.",
+    }
+
+
 def profile_dataframe(dataframe: pd.DataFrame) -> dict[str, Any]:
     columns = []
+    empty_columns: list[str] = []
+    constant_columns: list[str] = []
+    high_cardinality_columns: list[str] = []
+    potential_identifier_columns: list[str] = []
+    infinite_columns: dict[str, int] = {}
     for column in dataframe.columns:
-        missing_count = int(dataframe[column].isna().sum())
+        series = dataframe[column]
+        missing_count = int(series.isna().sum())
         missing_percentage = (missing_count / len(dataframe) * 100) if len(dataframe) else 0.0
+        non_missing = series.dropna()
+        unique_count = int(non_missing.nunique())
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        infinite_count = (
+            int(np.isinf(non_missing.to_numpy(dtype=float)).sum())
+            if is_numeric and len(non_missing)
+            else 0
+        )
+        if infinite_count:
+            infinite_columns[str(column)] = infinite_count
+        if unique_count == 0:
+            empty_columns.append(str(column))
+        elif unique_count == 1:
+            constant_columns.append(str(column))
+        if (
+            not is_numeric
+            and len(non_missing) >= 10
+            and unique_count / len(non_missing) >= 0.5
+        ):
+            high_cardinality_columns.append(str(column))
+        if len(non_missing) and (
+            re.search(r"(^|[_ -])id($|[_ -])", str(column), re.IGNORECASE)
+            or unique_count / len(non_missing) >= 0.98
+        ):
+            potential_identifier_columns.append(str(column))
         columns.append(
             {
                 "name": str(column),
-                "type": "numeric" if pd.api.types.is_numeric_dtype(dataframe[column]) else "categorical",
-                "data_type": str(dataframe[column].dtype),
+                "type": "numeric" if is_numeric else "categorical",
+                "data_type": str(series.dtype),
                 "missing": f"{missing_percentage:.1f}% ({missing_count})",
                 "missing_count": missing_count,
                 "missing_percentage": round(missing_percentage, 2),
+                "unique_count": unique_count,
+                "constant": unique_count == 1,
+                "empty": unique_count == 0,
+                "high_cardinality": str(column) in high_cardinality_columns,
+                "potential_identifier": str(column) in potential_identifier_columns,
+                "infinite_count": infinite_count,
             }
         )
 
-    numerical_summary: dict[str, dict[str, Any]] = {}
     numeric_columns = dataframe.select_dtypes(include=["number"]).columns
+    numeric_data = dataframe[numeric_columns].replace([np.inf, -np.inf], np.nan)
+    numerical_summary: dict[str, dict[str, Any]] = {}
     for column in numeric_columns:
-        statistics = dataframe[column].describe()
+        statistics = numeric_data[column].describe()
         summary: dict[str, Any] = {}
         for statistic, value in statistics.items():
             numeric_value = float(value)
@@ -631,11 +738,61 @@ def profile_dataframe(dataframe: pd.DataFrame) -> dict[str, Any]:
             "frequency": int(counts.iloc[0]) if not counts.empty else 0,
         }
 
+    duplicate_percentage = (
+        float(dataframe.duplicated().sum() / len(dataframe) * 100)
+        if len(dataframe)
+        else 0.0
+    )
+    numeric_skewness = (
+        numeric_data.skew().replace([np.inf, -np.inf], np.nan).dropna()
+    )
+    quality_warnings = []
+    if empty_columns:
+        quality_warnings.append("Empty columns require review: " + ", ".join(empty_columns))
+    if constant_columns:
+        quality_warnings.append("Constant columns provide no variation: " + ", ".join(constant_columns))
+    if high_cardinality_columns:
+        quality_warnings.append(
+            "High-cardinality categorical columns may need review: "
+            + ", ".join(high_cardinality_columns)
+        )
+    if potential_identifier_columns:
+        quality_warnings.append(
+            "Potential identifier columns were detected; review before training: "
+            + ", ".join(potential_identifier_columns)
+        )
+    if infinite_columns:
+        quality_warnings.append(
+            "Infinite numeric values will be treated as missing by preprocessing: "
+            + ", ".join(f"{name} ({count})" for name, count in infinite_columns.items())
+        )
+    duplicate_rows = int(dataframe.duplicated().sum())
+    if duplicate_rows:
+        quality_warnings.append(f"{duplicate_rows} duplicate rows were found; they were not removed.")
+
     return {
         "rows": int(len(dataframe)),
         "columns_count": int(len(dataframe.columns)),
         "columns": columns,
-        "duplicate_rows": int(dataframe.duplicated().sum()),
+        "duplicate_rows": duplicate_rows,
+        "duplicate_percentage": round(duplicate_percentage, 2),
+        "mean_skewness": (
+            round(float(numeric_skewness.mean()), 4)
+            if not numeric_skewness.empty
+            else 0.0
+        ),
+        "numerical_feature_count": len(numeric_columns),
+        "categorical_feature_count": len(categorical_columns),
+        "missing_percentage": round(
+            float(dataframe.isna().sum().sum() / max(dataframe.size, 1) * 100),
+            2,
+        ),
+        "empty_columns": empty_columns,
+        "constant_columns": constant_columns,
+        "high_cardinality_columns": high_cardinality_columns,
+        "potential_identifier_columns": potential_identifier_columns,
+        "infinite_values": infinite_columns,
+        "quality_warnings": quality_warnings,
         "numerical_summary": numerical_summary,
         "categorical_summary": categorical_summary,
     }
@@ -664,7 +821,7 @@ def _training_data(
     if y.isna().any():
         raise HTTPException(status_code=422, detail="The target column contains missing or non-finite values.")
 
-    X = dataframe.drop(columns=[target]).dropna(axis=1, how="all")
+    X = dataframe.drop(columns=[target])
     if X.empty or not len(X.columns):
         raise HTTPException(status_code=422, detail="At least one non-empty feature column is required.")
 
@@ -732,9 +889,39 @@ def candidate_models(task_type: str) -> tuple[dict[str, Any], ...]:
                 "scale_numerical": True,
             },
             {
+                "name": "Decision Tree Classifier",
+                "model": DecisionTreeClassifier(random_state=42),
+                "role": "tree",
+                "scale_numerical": False,
+            },
+            {
                 "name": "Random Forest Classifier",
                 "model": RandomForestClassifier(n_estimators=100, random_state=42),
                 "role": "forest",
+                "scale_numerical": False,
+            },
+            {
+                "name": "Support Vector Machine",
+                "model": SVC(random_state=42),
+                "role": "kernel",
+                "scale_numerical": True,
+            },
+            {
+                "name": "K-Nearest Neighbors",
+                "model": KNeighborsClassifier(),
+                "role": "instance",
+                "scale_numerical": True,
+            },
+            {
+                "name": "Naive Bayes",
+                "model": GaussianNB(),
+                "role": "probabilistic",
+                "scale_numerical": False,
+            },
+            {
+                "name": "Gradient Boosting Classifier",
+                "model": GradientBoostingClassifier(random_state=42),
+                "role": "boosting",
                 "scale_numerical": False,
             },
         )
@@ -752,9 +939,33 @@ def candidate_models(task_type: str) -> tuple[dict[str, Any], ...]:
             "scale_numerical": True,
         },
         {
+            "name": "Decision Tree Regressor",
+            "model": DecisionTreeRegressor(random_state=42),
+            "role": "tree",
+            "scale_numerical": False,
+        },
+        {
             "name": "Random Forest Regressor",
             "model": RandomForestRegressor(n_estimators=100, random_state=42),
             "role": "forest",
+            "scale_numerical": False,
+        },
+        {
+            "name": "Support Vector Regression",
+            "model": SVR(),
+            "role": "kernel",
+            "scale_numerical": True,
+        },
+        {
+            "name": "K-Nearest Neighbors Regressor",
+            "model": KNeighborsRegressor(),
+            "role": "instance",
+            "scale_numerical": True,
+        },
+        {
+            "name": "Gradient Boosting Regressor",
+            "model": GradientBoostingRegressor(random_state=42),
+            "role": "boosting",
             "scale_numerical": False,
         },
     )
@@ -830,7 +1041,7 @@ def _model_hyperparameters(model: Any) -> dict[str, Any]:
         return {}
 
 
-def _classification_metrics(y_true: Any, y_pred: Any) -> dict[str, float]:
+def _classification_metrics(y_true: Any, y_pred: Any) -> dict[str, float | None]:
     """Validation classification metrics.
 
     average='weighted' with zero_division=0 keeps precision, recall, and F1
@@ -851,6 +1062,42 @@ def _classification_metrics(y_true: Any, y_pred: Any) -> dict[str, float]:
         ),
         "Balanced Accuracy": float(balanced_accuracy_score(y_true, y_pred)),
     }
+
+
+def _classification_roc_auc(
+    pipeline: Pipeline,
+    X: pd.DataFrame,
+    y_true: pd.Series,
+) -> float | None:
+    """Compute ROC-AUC from model scores when class coverage permits."""
+    estimator = pipeline.named_steps["model"]
+    classes = getattr(estimator, "classes_", None)
+    if classes is None or len(classes) < 2:
+        return None
+    expected = set(classes)
+    if set(pd.Series(y_true).unique()) != expected:
+        return None
+    try:
+        if hasattr(pipeline, "predict_proba"):
+            scores = pipeline.predict_proba(X)
+        elif hasattr(pipeline, "decision_function"):
+            scores = pipeline.decision_function(X)
+        else:
+            return None
+        if len(classes) == 2:
+            positive_scores = scores[:, 1] if np.asarray(scores).ndim == 2 else scores
+            return float(roc_auc_score(y_true, positive_scores))
+        return float(
+            roc_auc_score(
+                y_true,
+                scores,
+                labels=classes,
+                multi_class="ovr",
+                average="weighted",
+            )
+        )
+    except (ValueError, TypeError):
+        return None
 
 
 def _regression_metrics(
@@ -1000,6 +1247,9 @@ async def upload_dataset(file: UploadFile = File(...)):
         "reliability": None,
         "feature_schema": None,
         "active_model": None,
+        "task_2": None,
+        "comparison": None,
+        "meta_features": None,
     }
     _save_state(next_state)
 
@@ -1091,6 +1341,7 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
         artifact_location=MLFLOW_ARTIFACT_DIR.as_uri(),
     )
     results: list[dict[str, Any]] = []
+    benchmark_started = time.perf_counter()
 
     for candidate in candidate_models(task_type):
         name = candidate["name"]
@@ -1107,6 +1358,8 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
             "confusion_matrix": None,
             "error": None,
             "run_id": None,
+            "training_time_seconds": None,
+            "cross_validation": None,
         }
 
         active_run = mlflow.start_run(experiment_id=experiment_id, run_name=name)
@@ -1131,16 +1384,48 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
                 bool(candidate["scale_numerical"]),
             )
             pipeline = Pipeline(steps=[("preprocessor", preprocessor), ("model", candidate["model"])])
+            start_time = time.perf_counter()
             pipeline.fit(X_train, y_train)
+            training_time = time.perf_counter() - start_time
             predictions = pipeline.predict(X_val)
 
             if task_type == "classification":
                 metrics = _classification_metrics(y_val, predictions)
+                metrics["ROC-AUC"] = _classification_roc_auc(
+                    pipeline,
+                    X_val,
+                    y_val,
+                )
                 confusion = _confusion_matrix_record(y_val, predictions)
                 _log_confusion_matrix_artifact(confusion)
             else:
                 metrics = _regression_metrics(y_val, predictions, reliability_notes)
                 confusion = None
+
+            cross_validation = None
+            try:
+                cv_scoring = "f1_weighted" if task_type == "classification" else "neg_root_mean_squared_error"
+                cv_scores = cross_val_score(
+                    pipeline,
+                    X_train,
+                    y_train,
+                    cv=min(3, len(X_train)),
+                    scoring=cv_scoring,
+                )
+                if task_type == "regression":
+                    cv_scores = -cv_scores
+                cross_validation = {
+                    "fold_scores": [float(score) for score in cv_scores],
+                    "mean": float(cv_scores.mean()),
+                    "std": float(cv_scores.std()),
+                    "folds": len(cv_scores),
+                    "metric": "weighted F1" if task_type == "classification" else "RMSE",
+                }
+            except Exception as cv_error:
+                cross_validation = {
+                    "available": False,
+                    "error": str(cv_error)[:300],
+                }
 
             mlflow.log_metrics(
                 {key: value for key, value in metrics.items() if value is not None}
@@ -1168,6 +1453,8 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
                 primary=metrics[primary_metric],
                 confusion_matrix=confusion,
                 error=None,
+                training_time_seconds=round(training_time, 6),
+                cross_validation=cross_validation,
             )
             mlflow.end_run(status="FINISHED")
         except Exception as exc:
@@ -1204,6 +1491,7 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
 
     failures = [entry for entry in results if entry["status"] == "failed"]
     successes = [entry for entry in results if entry["status"] == "success"]
+    benchmark_training_time = time.perf_counter() - benchmark_started
     if not successes:
         raise HTTPException(
             status_code=422,
@@ -1249,6 +1537,175 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
         "warnings": reliability_notes,
     }
 
+    meta_features = extract_meta_features(dataframe, target, task_type)
+    meta_manager = MetaDatasetManager(META_DATASET_FILE)
+    historical_experiments = meta_manager.load()
+    meta_model, meta_status = train_meta_model(
+        historical_experiments,
+        task_type,
+        exclude_fingerprint=dataset_fingerprint,
+    )
+    predicted_algorithm, meta_confidence = predict_algorithm(
+        meta_model,
+        meta_status,
+        meta_features,
+        task_type,
+    )
+    predicted_candidate = next(
+        (candidate for candidate in candidate_models(task_type)
+         if candidate["name"] == predicted_algorithm),
+        None,
+    )
+    task_2_entry: dict[str, Any] = {
+        "predicted_algorithm": predicted_algorithm,
+        "selection_method": meta_status["selection_method"],
+        "meta_features": meta_features,
+        "meta_status": meta_status,
+        "confidence": meta_confidence,
+        "status": "failed",
+        "metrics": {},
+        "primary": None,
+        "training_time_seconds": None,
+        "run_id": None,
+        "active_model": None,
+        "error": None,
+    }
+    if predicted_candidate is None:
+        task_2_entry["error"] = {
+            "type": "AlgorithmUnavailable",
+            "message": f"No implementation is configured for {predicted_algorithm}.",
+        }
+    else:
+        task_2_run = mlflow.start_run(
+            experiment_id=experiment_id,
+            run_name=f"Task 2 - {predicted_algorithm}",
+        )
+        task_2_entry["run_id"] = task_2_run.info.run_id
+        try:
+            preprocessor = _build_preprocessor(
+                numeric_features,
+                categorical_features,
+                bool(predicted_candidate["scale_numerical"]),
+            )
+            task_2_pipeline = Pipeline(
+                steps=[
+                    ("preprocessor", preprocessor),
+                    ("model", predicted_candidate["model"]),
+                ]
+            )
+            task_2_start = time.perf_counter()
+            task_2_pipeline.fit(X_train, y_train)
+            task_2_training_time = time.perf_counter() - task_2_start
+            task_2_predictions = task_2_pipeline.predict(X_val)
+            if task_type == "classification":
+                task_2_metrics = _classification_metrics(y_val, task_2_predictions)
+                task_2_metrics["ROC-AUC"] = _classification_roc_auc(
+                    task_2_pipeline,
+                    X_val,
+                    y_val,
+                )
+                _log_confusion_matrix_artifact(
+                    _confusion_matrix_record(y_val, task_2_predictions)
+                )
+            else:
+                task_2_metrics = _regression_metrics(y_val, task_2_predictions, reliability_notes)
+
+            mlflow.log_params(
+                {
+                    **dataset_context_params,
+                    "model_type": predicted_algorithm,
+                    "model_role": "task_2_meta_selection",
+                    "selection_method": meta_status["selection_method"],
+                }
+            )
+            mlflow.log_metrics(
+                {key: value for key, value in task_2_metrics.items() if value is not None}
+            )
+            mlflow.sklearn.log_model(
+                task_2_pipeline,
+                artifact_path="model",
+                skops_trusted_types=SKOPS_TRUSTED_MODEL_TYPES,
+            )
+            _log_json_artifact(
+                "inference",
+                "inference_schema.json",
+                {
+                    "task_type": task_type,
+                    "target": target,
+                    "features": feature_schema,
+                },
+            )
+            mlflow.end_run(status="FINISHED")
+            task_2_entry.update(
+                status="success",
+                metrics=task_2_metrics,
+                primary=task_2_metrics[primary_metric],
+                training_time_seconds=round(task_2_training_time, 6),
+            )
+            task_2_entry["active_model"] = _register_selected_model(
+                task_2_entry,
+                task_type,
+                META_MODEL_REGISTRY_NAME,
+            )
+        except Exception as exc:
+            task_2_entry["error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc)[:500],
+            }
+            mlflow.end_run(status="FAILED")
+
+    meta_manager.add(
+        {
+            "dataset_fingerprint": dataset_fingerprint,
+            "task_type": task_type,
+            "target": target,
+            "meta_features": meta_features,
+            "actual_best_algorithm": best_model["model"],
+            "actual_metrics": best_model["metrics"],
+            "task_2_predicted_algorithm": predicted_algorithm,
+            "selection_method": meta_status["selection_method"],
+        }
+    )
+
+    performance_difference = None
+    relative_performance_difference = None
+    if task_2_entry["status"] == "success":
+        task_1_primary = best_model["primary"]
+        task_2_primary = task_2_entry["primary"]
+        if task_1_primary is not None and task_2_primary is not None:
+            if metric_direction == "maximize":
+                performance_difference = round(task_1_primary - task_2_primary, 6)
+                relative_performance_difference = (
+                    round(performance_difference / max(abs(task_1_primary), 1e-12), 6)
+                )
+            else:
+                performance_difference = round(task_2_primary - task_1_primary, 6)
+                relative_performance_difference = (
+                    round(performance_difference / max(abs(task_1_primary), 1e-12), 6)
+                )
+    comparison = {
+        "task_1_algorithm": best_model["model"],
+        "task_2_algorithm": predicted_algorithm,
+        "algorithms_match": best_model["model"] == predicted_algorithm,
+        "task_1_primary_metric": primary_metric,
+        "task_1_primary_value": best_model["primary"],
+        "task_2_primary_value": task_2_entry["primary"],
+        "performance_difference": performance_difference,
+        "relative_performance_difference": relative_performance_difference,
+        "task_1_training_time_seconds": round(benchmark_training_time, 6),
+        "task_2_training_time_seconds": task_2_entry["training_time_seconds"],
+        "time_saved_seconds": (
+            round(benchmark_training_time - task_2_entry["training_time_seconds"], 6)
+            if task_2_entry["training_time_seconds"] is not None
+            else None
+        ),
+        "task_1_vs_task_2_metric": "Task 1 minus Task 2 for maximized metrics; Task 2 minus Task 1 for minimized metrics",
+        "recommendation": (
+            "Use Task 1 for the measured best model. "
+            "Task 2 is the faster single-model selection path and should be used with its displayed reliability status."
+        ),
+    }
+
     active_model = _register_selected_model(best_model, task_type)
     if active_model["registered"]:
         selected_model_uri = (
@@ -1270,6 +1727,9 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
         "reliability": reliability_report,
         "feature_schema": feature_schema,
         "active_model": active_model,
+        "task_2": task_2_entry,
+        "comparison": comparison,
+        "meta_features": meta_features,
     }
     _save_state(next_state)
     STATE.update(next_state)
@@ -1290,7 +1750,20 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
         registry_version=active_model["registry_version"],
         run_id=best_model["run_id"],
     )
-    return JSONResponse(content={"status": "success", "redirect": "/"})
+    return JSONResponse(
+        content={
+            "status": "success",
+            "redirect": "/",
+            "task_1": {
+                "best_algorithm": best_model["model"],
+                "metrics": best_model["metrics"],
+                "training_time_seconds": round(benchmark_training_time, 6),
+                "results": ordered_results,
+            },
+            "task_2": task_2_entry,
+            "comparison": comparison,
+        }
+    )
 
 
 def _coerce_feature_value(kind: str | None, value: Any) -> tuple[Any, str | None]:
@@ -1471,9 +1944,13 @@ def dataset_preview(rows: int = 10):
             detail="The stored dataset could not be read. Upload a valid CSV file again.",
         ) from exc
 
+    profile = profile_dataframe(dataframe)
     columns = []
     for column in dataframe.columns:
         missing_count = int(dataframe[column].isna().sum())
+        profile_column = next(
+            item for item in profile["columns"] if item["name"] == str(column)
+        )
         columns.append(
             {
                 "name": str(column),
@@ -1483,6 +1960,12 @@ def dataset_preview(rows: int = 10):
                 "missing_percentage": round(missing_count / len(dataframe) * 100, 2)
                 if len(dataframe)
                 else 0.0,
+                "unique_count": profile_column["unique_count"],
+                "constant": profile_column["constant"],
+                "empty": profile_column["empty"],
+                "high_cardinality": profile_column["high_cardinality"],
+                "potential_identifier": profile_column["potential_identifier"],
+                "infinite_count": profile_column["infinite_count"],
             }
         )
 
@@ -1498,6 +1981,7 @@ def dataset_preview(rows: int = 10):
         "preview_rows": int(len(preview)),
         "columns": columns,
         "rows": records,
+        "quality_warnings": profile["quality_warnings"],
     }
 
 
@@ -1581,6 +2065,76 @@ def get_experiments(limit: int = 25):
     }
 
 
+@app.get("/api/problem-detection")
+def problem_detection(target: str):
+    """Return a computed problem-type suggestion for the uploaded dataset."""
+    dataset_path = STATE.get("dataset_path")
+    if not isinstance(dataset_path, str) or not Path(dataset_path).is_file():
+        raise HTTPException(status_code=409, detail="Upload a CSV file first.")
+    try:
+        dataframe = pd.read_csv(dataset_path, on_bad_lines="error")
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="The uploaded dataset could not be read.") from exc
+    return detect_problem_type(dataframe, target)
+
+
+@app.get("/api/overview")
+def overview():
+    """Return real, computed dashboard summary values."""
+    meta_manager = MetaDatasetManager(META_DATASET_FILE)
+    experiments = meta_manager.load()
+    fingerprints = {
+        item.get("dataset_fingerprint")
+        for item in experiments
+        if item.get("dataset_fingerprint")
+    }
+    if STATE.get("dataset_fingerprint"):
+        fingerprints.add(STATE["dataset_fingerprint"])
+    task_2 = STATE.get("task_2")
+    saved_models = int(bool(STATE.get("active_model")))
+    if isinstance(task_2, dict) and task_2.get("status") == "success":
+        saved_models += 1
+    return {
+        "datasets_processed": len(fingerprints)
+        + int(bool(STATE.get("dataset_path")) and not STATE.get("dataset_fingerprint")),
+        "experiments": len(experiments),
+        "training_runs": len(STATE.get("results") or [])
+        + int(isinstance(task_2, dict) and task_2.get("status") == "success"),
+        "saved_models": saved_models,
+        "recent_activity": (
+            {
+                "filename": STATE.get("filename"),
+                "task_type": STATE.get("task_type"),
+                "best_algorithm": (STATE.get("best_model") or {}).get("model"),
+            }
+            if STATE.get("best_model")
+            else None
+        ),
+    }
+
+
+@app.get("/api/meta-learning")
+def meta_learning_status():
+    task_2 = STATE.get("task_2")
+    if not isinstance(task_2, dict):
+        return {
+            "available": False,
+            "selection_method": "Cold-Start Rule-Based Prediction",
+            "historical_experiments": len(MetaDatasetManager(META_DATASET_FILE).load()),
+            "minimum_experiments": 8,
+            "reliable": False,
+        }
+    return {"available": True, **task_2}
+
+
+@app.get("/api/comparison")
+def model_comparison():
+    comparison = STATE.get("comparison")
+    if not isinstance(comparison, dict):
+        raise HTTPException(status_code=409, detail="Run model training to generate a Task 1 vs Task 2 comparison.")
+    return comparison
+
+
 @app.get("/api/model/schema")
 def model_schema():
     """Expose the prediction contract of the active model.
@@ -1620,6 +2174,62 @@ def model_schema():
     }
 
 
+@app.get("/api/models")
+def saved_models():
+    """List real active Task 1 and Task 2 model references."""
+    models = []
+    if isinstance(STATE.get("best_model"), dict):
+        active = STATE.get("active_model") or {}
+        models.append({
+            "task": "Task 1 - Actual Benchmark",
+            "name": STATE["best_model"].get("model"),
+            "problem_type": STATE.get("task_type"),
+            "metrics": STATE["best_model"].get("metrics"),
+            "run_id": STATE["best_model"].get("run_id"),
+            "registry_version": active.get("registry_version"),
+        })
+    task_2 = STATE.get("task_2")
+    if isinstance(task_2, dict) and task_2.get("status") == "success":
+        models.append({
+            "task": "Task 2 - Predicted Selection",
+            "name": task_2.get("predicted_algorithm"),
+            "problem_type": STATE.get("task_type"),
+            "metrics": task_2.get("metrics"),
+            "run_id": task_2.get("run_id"),
+            "registry_version": (task_2.get("active_model") or {}).get("registry_version"),
+        })
+    return {"models": models, "count": len(models)}
+
+
+@app.get("/api/models/{run_id}/download")
+def download_model(run_id: str):
+    """Download a complete pipeline only from a finished AutoFlow run."""
+    try:
+        run = _valid_application_run(run_id)
+        pipeline = mlflow.sklearn.load_model(f"runs:/{run.info.run_id}/model")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="The requested AutoFlow model was not found.") from exc
+    except Exception as exc:
+        _log_event(
+            logging.ERROR,
+            "model_download_failed",
+            run_id=run_id,
+            reason=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        raise HTTPException(status_code=503, detail="The model artifact is unavailable.") from exc
+
+    artifact = io.BytesIO()
+    joblib.dump(pipeline, artifact)
+    artifact.seek(0)
+    filename = f"autoflow-model-{run_id}.joblib"
+    return StreamingResponse(
+        artifact,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.post("/predict")
 async def predict(request: Request):
     try:
@@ -1627,9 +2237,50 @@ async def predict(request: Request):
     except (ValueError, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail="Request body must contain valid JSON.") from exc
 
-    inference_pipeline = _get_inference_pipeline()
-    expected_features = list(inference_pipeline.feature_names_in_)
+    selected_run_id = payload.get("model_run_id") if isinstance(payload, dict) else None
     feature_schema = STATE.get("feature_schema")
+    if selected_run_id is not None:
+        if not isinstance(selected_run_id, str):
+            raise HTTPException(status_code=422, detail="'model_run_id' must be a string.")
+        try:
+            run = _valid_application_run(selected_run_id)
+            inference_pipeline = mlflow.sklearn.load_model(
+                f"runs:/{run.info.run_id}/model"
+            )
+            schema_path = _tracking_client().download_artifacts(
+                run.info.run_id,
+                "inference/inference_schema.json",
+            )
+            with Path(schema_path).open(encoding="utf-8") as schema_file:
+                saved_schema = json.load(schema_file)
+            feature_schema = saved_schema.get("features", {})
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="The requested AutoFlow model was not found.",
+            ) from exc
+        except Exception as exc:
+            _log_event(
+                logging.ERROR,
+                "selected_model_unavailable",
+                run_id=selected_run_id,
+                reason=type(exc).__name__,
+                error=str(exc)[:300],
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="The selected model or its feature schema is unavailable.",
+            ) from exc
+        model_version = selected_run_id
+        registry_version = None
+    else:
+        inference_pipeline = _get_inference_pipeline()
+        best_model = STATE.get("best_model") if isinstance(STATE.get("best_model"), dict) else {}
+        active_model = STATE.get("active_model") if isinstance(STATE.get("active_model"), dict) else {}
+        model_version = best_model.get("run_id") or active_model.get("run_id") or ""
+        registry_version = active_model.get("registry_version")
+
+    expected_features = list(inference_pipeline.feature_names_in_)
     feature_schema = (
         {str(key): str(value) for key, value in feature_schema.items()}
         if isinstance(feature_schema, dict)
@@ -1649,11 +2300,6 @@ async def predict(request: Request):
             status_code=422,
             detail="Feature values could not be processed by the active model.",
         ) from exc
-
-    best_model = STATE.get("best_model") if isinstance(STATE.get("best_model"), dict) else {}
-    active_model = STATE.get("active_model") if isinstance(STATE.get("active_model"), dict) else {}
-    model_version = best_model.get("run_id") or active_model.get("run_id") or ""
-    registry_version = active_model.get("registry_version")
 
     if single_row_mode:
         return {

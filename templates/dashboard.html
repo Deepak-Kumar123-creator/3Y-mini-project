@@ -243,6 +243,7 @@
         <a href="#overview">Overview</a>
         <a href="#dataset">Dataset</a>
         <a href="#training">Training</a>
+        <a href="#meta-learning">Meta-Learning</a>
         <a href="#experiments">Experiments</a>
         <a href="#predictions">Predictions</a>
     </nav>
@@ -302,6 +303,13 @@
                 {% endif %}
             </div>
         </div>
+        <div class="grid" aria-label="Project totals">
+            <div class="card"><span class="stat-label">Datasets processed</span><p class="stat-value" id="overviewDatasets">—</p></div>
+            <div class="card"><span class="stat-label">Historical experiments</span><p class="stat-value" id="overviewExperiments">—</p></div>
+            <div class="card"><span class="stat-label">Latest training runs</span><p class="stat-value" id="overviewRuns">—</p></div>
+            <div class="card"><span class="stat-label">Saved models</span><p class="stat-value" id="overviewModels">—</p></div>
+        </div>
+        <div id="overviewMessages" aria-live="polite"></div>
     </section>
 
     <!-- ============ 2. DATASET MANAGEMENT ============ -->
@@ -348,6 +356,7 @@
                             {% endfor %}
                         </select>
                         <div class="field-hint">Populated from the uploaded dataset columns.</div>
+                        <div id="problemDetection" class="field-hint" aria-live="polite"></div>
                     </div>
                     <div>
                         <label for="task_type">Task type</label>
@@ -423,6 +432,12 @@
                                         {% for key, value in res.metrics.items() %}
                                         <div>{{ key }}: {% if value is none %}&mdash;{% else %}{{ value|round(4) }}{% endif %}</div>
                                         {% endfor %}
+                                        {% if res.training_time_seconds is defined and res.training_time_seconds is not none %}
+                                        <div>Training time: {{ res.training_time_seconds|round(4) }} s</div>
+                                        {% endif %}
+                                        {% if res.cross_validation and res.cross_validation.mean is defined %}
+                                        <div>CV {{ res.cross_validation.metric }}: {{ res.cross_validation.mean|round(4) }} &plusmn; {{ res.cross_validation.std|round(4) }}</div>
+                                        {% endif %}
                                         {% if res.confusion_matrix %}
                                         <details class="matrix">
                                             <summary>Confusion matrix ({{ res.confusion_matrix.labels|join(", ") }})</summary>
@@ -443,6 +458,72 @@
                 <div class="empty">No evaluated models yet. Run training to generate real results.</div>
             {% endif %}
         </div>
+    </section>
+
+    <!-- ============ 3. META-LEARNING AND COMPARISON ============ -->
+    <section id="meta-learning" aria-labelledby="meta-learning-title">
+        <h2 class="section-title" id="meta-learning-title">3. Meta-Learning vs Benchmark</h2>
+        <p class="section-sub">Task 2 predicts one algorithm and trains only that model; it is compared separately with Task 1.</p>
+        {% if state.task_2 %}
+        <div class="grid">
+            <div class="card">
+                <h3>Task 1 - Actual Benchmark</h3>
+                <div class="stat-value">{{ state.best_model.model }}</div>
+                <div class="stat-meta">Primary metric: {{ state.primary_metric }} = {{ state.best_model.primary|round(4) }}</div>
+                {% if state.best_model.training_time_seconds is not none %}
+                <div class="stat-meta">Training time: {{ state.best_model.training_time_seconds }} s</div>
+                {% endif %}
+                {% if state.best_model.run_id %}
+                <a class="btn btn-secondary" href="/api/models/{{ state.best_model.run_id }}/download">Download complete pipeline</a>
+                {% endif %}
+            </div>
+            <div class="card">
+                <h3>Task 2 - Predicted Selection</h3>
+                <div class="stat-value">{{ state.task_2.predicted_algorithm }}</div>
+                <div class="stat-meta">{{ state.task_2.selection_method }}</div>
+                {% if state.task_2.confidence is not none %}
+                <div class="stat-meta">Meta-model confidence: {{ (state.task_2.confidence * 100)|round(1) }}%</div>
+                {% endif %}
+                {% if state.task_2.training_time_seconds is not none %}
+                <div class="stat-meta">Training time: {{ state.task_2.training_time_seconds }} s</div>
+                {% endif %}
+                {% if state.task_2.run_id and state.task_2.status == "success" %}
+                <a class="btn btn-secondary" href="/api/models/{{ state.task_2.run_id }}/download">Download complete pipeline</a>
+                {% endif %}
+            </div>
+            {% if state.comparison %}
+            <div class="card">
+                <h3>Task 1 vs Task 2</h3>
+                <div class="stat-meta">Algorithms match: <strong>{{ "Yes" if state.comparison.algorithms_match else "No" }}</strong></div>
+                <div class="stat-meta">Performance difference: {{ state.comparison.performance_difference if state.comparison.performance_difference is not none else "&mdash;" }}</div>
+                <div class="stat-meta">Time saved by Task 2: {{ state.comparison.time_saved_seconds if state.comparison.time_saved_seconds is not none else "&mdash;" }} s</div>
+                <div class="notice notice-neutral">{{ state.comparison.recommendation }}</div>
+            </div>
+            <div class="card">
+                <h3>Meta-Learning Status</h3>
+                <div class="stat-meta">Historical experiments: {{ state.task_2.meta_status.historical_experiments }}</div>
+                <div class="stat-meta">Minimum before trained meta-model: {{ state.task_2.meta_status.minimum_experiments }}</div>
+                <div class="badge {% if state.task_2.meta_status.trained %}badge-neutral{% else %}badge-warn{% endif %}">
+                    {{ "Trained meta-model; reliability not yet validated" if state.task_2.meta_status.trained else "Cold-start fallback" }}
+                </div>
+            </div>
+            <div class="card">
+                <h3>Dataset meta-features</h3>
+                <div class="stat-meta">{{ state.meta_features.rows }} rows &middot; {{ state.meta_features.columns }} features</div>
+                <div class="stat-meta">{{ state.meta_features.numeric_features }} numeric &middot; {{ state.meta_features.categorical_features }} categorical</div>
+                <div class="stat-meta">Missing: {{ state.meta_features.missing_percentage|round(2) }}% &middot; duplicates: {{ state.meta_features.duplicate_percentage|round(2) }}%</div>
+                {% if state.task_type == "classification" %}
+                <div class="stat-meta">Classes: {{ state.meta_features.target_classes }} &middot; imbalance ratio: {{ state.meta_features.class_imbalance_ratio|round(2) }}</div>
+                <div class="stat-meta">Target distribution: {{ state.meta_features.target_distribution }}</div>
+                {% else %}
+                <div class="stat-meta">Target mean {{ state.meta_features.target_mean|round(4) }}, median {{ state.meta_features.target_median|round(4) }}, std {{ state.meta_features.target_std|round(4) }}</div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="card"><div class="empty">Run training to see separate Task 1 and Task 2 results.</div></div>
+        {% endif %}
     </section>
 
     <!-- ============ 4. EXPERIMENTS ============ -->
@@ -473,6 +554,14 @@
             </p>
             <div id="schemaMessages" aria-live="polite"></div>
             <form id="predictForm" novalidate>
+                {% if state.task_2 and state.task_2.status == "success" %}
+                <label for="predictionModel">Saved model</label>
+                <select id="predictionModel" name="model_run_id">
+                    <option value="{{ state.best_model.run_id }}">Task 1 - {{ state.best_model.model }}</option>
+                    <option value="{{ state.task_2.run_id }}">Task 2 - {{ state.task_2.predicted_algorithm }}</option>
+                </select>
+                <div class="field-hint">Both saved pipelines use the same validated feature contract.</div>
+                {% endif %}
                 <div class="field-grid" id="predictFields"></div>
                 <button type="submit" class="btn" id="predictButton" style="margin-top:.9rem;">Predict</button>
             </form>
@@ -548,6 +637,34 @@ function fetchJSON(url, options) {
             });
     });
 }
+
+fetchJSON("/api/overview")
+    .then(function (result) {
+        var ids = {
+            datasets_processed: "overviewDatasets",
+            experiments: "overviewExperiments",
+            training_runs: "overviewRuns",
+            saved_models: "overviewModels"
+        };
+        if (!result.ok) {
+            setNotice(
+                document.getElementById("overviewMessages"),
+                "error",
+                errorMessageFromPayload(result.data, "Project totals are unavailable.")
+            );
+            return;
+        }
+        Object.keys(ids).forEach(function (key) {
+            document.getElementById(ids[key]).textContent = String(result.data[key]);
+        });
+    })
+    .catch(function () {
+        setNotice(
+            document.getElementById("overviewMessages"),
+            "error",
+            "Project totals could not be loaded."
+        );
+    });
 
 function setNotice(container, kind, message) {
     container.innerHTML = "";
@@ -677,6 +794,22 @@ function renderDatasetPreview(data) {
     summary.className = "field-hint";
     summary.textContent = "Showing " + data.preview_rows + " of " + data.shape.rows + " rows (" + data.shape.columns + " columns).";
     container.appendChild(summary);
+    if (data.quality_warnings && data.quality_warnings.length) {
+        var warning = document.createElement("div");
+        warning.className = "notice notice-warn";
+        var warningTitle = document.createElement("strong");
+        warningTitle.textContent = "Dataset quality warnings (no data was removed)";
+        warning.appendChild(warningTitle);
+        var warningList = document.createElement("ul");
+        warningList.style.margin = ".3rem 0 0 1rem";
+        data.quality_warnings.forEach(function (message) {
+            var item = document.createElement("li");
+            item.textContent = message;
+            warningList.appendChild(item);
+        });
+        warning.appendChild(warningList);
+        container.appendChild(warning);
+    }
 
     var scroll = document.createElement("div");
     scroll.className = "table-scroll";
@@ -724,7 +857,7 @@ function renderDatasetPreview(data) {
     var metaTable = document.createElement("table");
     var metaHead = document.createElement("thead");
     var metaHeaderRow = document.createElement("tr");
-    ["Column", "Inferred type", "Data type", "Missing values", "Missing %"].forEach(function (heading) {
+    ["Column", "Inferred type", "Data type", "Missing values", "Missing %", "Unique values", "Review flags"].forEach(function (heading) {
         var th = document.createElement("th");
         th.scope = "col";
         th.textContent = heading;
@@ -735,7 +868,21 @@ function renderDatasetPreview(data) {
     var metaBody = document.createElement("tbody");
     data.columns.forEach(function (column) {
         var row = document.createElement("tr");
-        [column.name, column.kind, column.dtype, String(column.missing), column.missing_percentage + "%"].forEach(function (text, index) {
+        var flags = [];
+        if (column.empty) { flags.push("empty"); }
+        if (column.constant) { flags.push("constant"); }
+        if (column.high_cardinality) { flags.push("high cardinality"); }
+        if (column.potential_identifier) { flags.push("possible identifier"); }
+        if (column.infinite_count) { flags.push(column.infinite_count + " infinite"); }
+        [
+            column.name,
+            column.kind,
+            column.dtype,
+            String(column.missing),
+            column.missing_percentage + "%",
+            String(column.unique_count),
+            flags.length ? flags.join(", ") : "—"
+        ].forEach(function (text, index) {
             var cell = document.createElement("td");
             cell.textContent = text;
             if (index === 0) {
@@ -823,6 +970,30 @@ function handleTrainSubmit(event) {
 var trainForm = document.getElementById("trainForm");
 if (trainForm) {
     trainForm.addEventListener("submit", handleTrainSubmit);
+}
+
+var targetSelector = document.getElementById("target");
+var taskTypeSelector = document.getElementById("task_type");
+var problemDetection = document.getElementById("problemDetection");
+if (targetSelector && taskTypeSelector && problemDetection) {
+    targetSelector.addEventListener("change", function () {
+        problemDetection.textContent = "Detecting problem type...";
+        fetchJSON("/api/problem-detection?target=" + encodeURIComponent(targetSelector.value))
+            .then(function (result) {
+                if (!result.ok || !result.data || !result.data.detected) {
+                    problemDetection.textContent = errorMessageFromPayload(result.data, "Problem type could not be detected.");
+                    return;
+                }
+                taskTypeSelector.value = result.data.detected;
+                problemDetection.textContent = "Suggested: " + result.data.detected +
+                    " (" + Math.round(result.data.confidence * 100) + "% heuristic confidence). " +
+                    result.data.reason + " You can override this selection.";
+            })
+            .catch(function () {
+                problemDetection.textContent = "Problem type detection failed; choose the task type manually.";
+            });
+    });
+    targetSelector.dispatchEvent(new Event("change"));
 }
 
 /* ---------------- Experiments ---------------- */
@@ -1125,7 +1296,12 @@ function handlePredictSubmit(event) {
     fetchJSON("/predict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ features: features })
+        body: JSON.stringify({
+            features: features,
+            model_run_id: document.getElementById("predictionModel")
+                ? document.getElementById("predictionModel").value
+                : undefined
+        })
     })
         .then(function (result) {
             setBusy(button, false);
