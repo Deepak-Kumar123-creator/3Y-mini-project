@@ -207,6 +207,22 @@
 
         .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
         .field-hint { font-size: .75rem; color: var(--ink-faint); margin-top: .25rem; }
+        .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
+        .chart-card { min-width: 0; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: .9rem; }
+        .chart-card h4 { font-size: .9rem; margin: 0 0 .4rem; }
+        .chart-body { min-height: 190px; width: 100%; }
+        .chart-body svg { width: 100%; height: auto; overflow: visible; font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .chart-body .chart-empty { min-height: 155px; display: grid; place-items: center; padding: 1rem; color: var(--ink-faint); text-align: center; border: 1px dashed #cbd5e1; border-radius: 7px; }
+        .chart-help { color: var(--ink-faint); font-size: .76rem; margin: .35rem 0 0; }
+        .chart-axis { stroke: #94a3b8; stroke-width: 1; }
+        .chart-gridline { stroke: #e2e8f0; stroke-width: 1; }
+        .chart-label { fill: #42536b; }
+        .chart-mark { stroke: #fff; stroke-width: 1; }
+        .chart-legend { display: flex; flex-wrap: wrap; gap: .45rem .8rem; font-size: .75rem; margin: .35rem 0; }
+        .chart-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+        .chart-legend i { width: .65rem; height: .65rem; display: inline-block; border-radius: 2px; }
+        .chart-stat-line { display: flex; flex-wrap: wrap; gap: .45rem .8rem; color: var(--ink-soft); font-size: .78rem; }
+        .chart-select { max-width: 100%; }
         .missing-toggle { display: flex; align-items: center; gap: .4rem; font-size: .78rem; color: var(--ink-soft); margin-top: .3rem; font-weight: 500; }
         .missing-toggle input { width: auto; }
 
@@ -226,7 +242,7 @@
         @media (max-width: 640px) {
             main { padding: 1.1rem .8rem 3rem; }
             .card { padding: .95rem; }
-            .grid, .field-grid { grid-template-columns: 1fr; }
+            .grid, .field-grid, .chart-grid { grid-template-columns: 1fr; }
             .topnav a { padding: .35rem .6rem; font-size: .84rem; }
             .btn { width: 100%; justify-content: center; }
             .stat-value { font-size: 1.15rem; }
@@ -244,6 +260,7 @@
         <a href="#dataset">Dataset</a>
         <a href="#training">Training</a>
         <a href="#meta-learning">Meta-Learning</a>
+        <a href="#task-comparison">Task Comparison</a>
         <a href="#experiments">Experiments</a>
         <a href="#predictions">Predictions</a>
     </nav>
@@ -336,6 +353,26 @@
             <div id="datasetMessages" aria-live="polite"></div>
             <div id="preview"></div>
         </div>
+        <div class="card" id="datasetCharts">
+            <h3>Dataset visual analysis</h3>
+            <p class="field-hint">Charts are calculated from the uploaded dataset. Outliers are highlighted, never removed automatically.</p>
+            <div class="field-grid">
+                <div>
+                    <label for="chartFeature">Numeric feature distribution</label>
+                    <select id="chartFeature"></select>
+                </div>
+                <div>
+                    <label for="chartBins">Histogram bins (5–60)</label>
+                    <input id="chartBins" type="number" min="5" max="60" value="20">
+                </div>
+            </div>
+            <div class="chart-grid">
+                <article class="chart-card" id="chart-target"><h4>Target distribution</h4><div class="chart-body"></div><p class="chart-help"></p></article>
+                <article class="chart-card" id="chart-missing"><h4>Missing values by column</h4><div class="chart-body"></div><p class="chart-help"></p></article>
+                <article class="chart-card" id="chart-feature"><h4>Feature distribution and outliers</h4><div class="chart-body"></div><p class="chart-help"></p></article>
+                <article class="chart-card" id="chart-correlation"><h4>Numeric feature correlation</h4><div class="chart-body"></div><p class="chart-help"></p></article>
+            </div>
+        </div>
     </section>
 
     <!-- ============ 3. MODEL TRAINING ============ -->
@@ -352,7 +389,7 @@
                         <label for="target">Target column</label>
                         <select name="target" id="target" required>
                             {% for col in state.columns %}
-                            <option value="{{ col.name }}">{{ col.name }} ({{ col.type }})</option>
+                            <option value="{{ col.name }}"{% if state.target == col.name %} selected{% endif %}>{{ col.name }} ({{ col.type }})</option>
                             {% endfor %}
                         </select>
                         <div class="field-hint">Populated from the uploaded dataset columns.</div>
@@ -361,8 +398,8 @@
                     <div>
                         <label for="task_type">Task type</label>
                         <select name="task_type" id="task_type">
-                            <option value="classification">Classification</option>
-                            <option value="regression">Regression</option>
+                            <option value="classification"{% if state.task_type == "classification" or not state.task_type %} selected{% endif %}>Classification</option>
+                            <option value="regression"{% if state.task_type == "regression" %} selected{% endif %}>Regression</option>
                         </select>
                         <div class="field-hint">Classification selects by F1 (maximize); regression by RMSE (minimize).</div>
                     </div>
@@ -458,6 +495,29 @@
                 <div class="empty">No evaluated models yet. Run training to generate real results.</div>
             {% endif %}
         </div>
+        <div class="card" id="task1Charts">
+            <h3>Task 1 benchmark visualizations</h3>
+            <p class="field-hint">Only successful candidate evaluations are charted. Cross-validation shows training-fold CV results; other model charts use the held-out validation split.</p>
+            <div class="field-grid">
+                <div>
+                    <label for="visualModelSelector">Evaluation model for diagnostic charts</label>
+                    <select id="visualModelSelector"></select>
+                </div>
+                <div id="regressionMetricControl" hidden>
+                    <label for="regressionMetricSelector">Regression metric (different scales shown separately)</label>
+                    <select id="regressionMetricSelector"><option>MAE</option><option>RMSE</option><option>R2</option></select>
+                </div>
+            </div>
+            <div class="chart-grid">
+                <article class="chart-card" id="chart-model-metrics"><h4>Model metric comparison</h4><div class="chart-body"></div><p class="chart-help"></p></article>
+                <article class="chart-card" id="chart-model-time"><h4>Algorithm model-fit time</h4><div class="chart-body"></div><p class="chart-help">Model-fit time excludes MLflow logging and artifact persistence.</p></article>
+                <article class="chart-card" id="chart-cv"><h4>Cross-validation stability</h4><div class="chart-body"></div><p class="chart-help">Error bars show one standard deviation across training-fold CV scores.</p></article>
+                <article class="chart-card" id="chart-confusion"><h4>Validation confusion matrix</h4><div class="chart-body"></div><p class="chart-help">Rows are actual classes; columns are predicted classes.</p></article>
+                <article class="chart-card" id="chart-roc"><h4>ROC curves</h4><div class="chart-body"></div><p class="chart-help">Multiclass curves use one-vs-rest scores. AUC is calculated from model decision scores or probabilities.</p></article>
+                <article class="chart-card" id="chart-regression-actual"><h4>Actual vs predicted</h4><div class="chart-body"></div><p class="chart-help">Each point comes from the held-out validation split; the diagonal is perfect prediction.</p></article>
+                <article class="chart-card" id="chart-regression-residual"><h4>Residual analysis</h4><div class="chart-body"></div><p class="chart-help">Residual = actual − predicted. Patterns around zero can indicate systematic error.</p></article>
+            </div>
+        </div>
     </section>
 
     <!-- ============ 3. META-LEARNING AND COMPARISON ============ -->
@@ -524,6 +584,30 @@
         {% else %}
         <div class="card"><div class="empty">Run training to see separate Task 1 and Task 2 results.</div></div>
         {% endif %}
+        <div class="card">
+            <h3>Meta-learning visual analysis</h3>
+            <p class="field-hint">Raw probabilities are not calibrated and do not establish that the selector generalizes.</p>
+            <div class="chart-grid">
+                <article class="chart-card" id="chart-meta-importance"><h4>Meta-feature importance</h4><div class="chart-body"></div><p class="chart-help"></p></article>
+                <article class="chart-card" id="chart-meta-frequency"><h4>Historical algorithm winners</h4><div class="chart-body"></div><p class="chart-help">Counts are by distinct dataset fingerprint and problem type.</p></article>
+                <article class="chart-card" id="chart-meta-probability"><h4>Selection probabilities</h4><div class="chart-body"></div><p class="chart-help"></p></article>
+                <article class="chart-card" id="chart-meta-reliability"><h4>Dataset-level meta-learning reliability</h4><div class="chart-body"></div><p class="chart-help">Evaluated with leave-one-dataset-out splits.</p></article>
+            </div>
+        </div>
+    </section>
+
+    <section id="task-comparison" aria-labelledby="task-comparison-title">
+        <h2 class="section-title" id="task-comparison-title">Task 1 vs Task 2</h2>
+        <p class="section-sub">Task 1 is the measured benchmark reference. Task 2 predicts one model for faster selection; prefer it when its reliability has been validated.</p>
+        <div class="card">
+            <p class="notice notice-neutral">Task 1 is the measured benchmark reference. Task 2 is the faster single-model selection path. Use Task 1 when the objective is to select the best measured model for the current dataset. Use Task 2 when faster algorithm selection is important and its reliability has been validated.</p>
+            <div class="chart-grid">
+                <article class="chart-card" id="chart-comparison-metric"><h4>Primary metric comparison</h4><div class="chart-body"></div><p class="chart-help"></p></article>
+                <article class="chart-card" id="chart-comparison-time"><h4>Total task execution time</h4><div class="chart-body"></div><p class="chart-help">Task timing excludes MLflow logging and model persistence; fit time is reported separately.</p></article>
+                <article class="chart-card" id="chart-performance-gap"><h4>Task 2 performance gap</h4><div class="chart-body"></div><p class="chart-help">Positive means Task 2 is worse; negative means it is better on the selected metric.</p></article>
+                <article class="chart-card" id="chart-algorithm-match"><h4>Algorithm match</h4><div class="chart-body"></div><p class="chart-help">A match is not evidence that the selection method is reliable.</p></article>
+            </div>
+        </div>
     </section>
 
     <!-- ============ 4. EXPERIMENTS ============ -->
@@ -1348,6 +1432,551 @@ if (HAS_MODEL) {
     schemaEmpty.textContent = "Train a model first; prediction inputs are generated from its real feature contract.";
     predictFields.appendChild(schemaEmpty);
 }
+
+/* ---------------- Data-driven visualizations ---------------- */
+
+var chartColors = ["#1479b8", "#e58b25", "#32845a", "#8d62a9", "#d34b4b", "#37a3a3", "#667085"];
+function chartSvg(container, height, append) {
+    if (!append) { container.innerHTML = ""; }
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 680 " + (height || 300));
+    svg.setAttribute("role", "img");
+    container.appendChild(svg);
+    return svg;
+}
+function svgElement(svg, name, attrs, text) {
+    var node = document.createElementNS("http://www.w3.org/2000/svg", name);
+    Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+    if (text !== undefined) { node.textContent = String(text); }
+    svg.appendChild(node);
+    return node;
+}
+function chartEmpty(id, message, kind) {
+    var card = document.getElementById(id);
+    if (!card) { return; }
+    var body = card.querySelector(".chart-body");
+    body.innerHTML = "";
+    var empty = document.createElement("div");
+    empty.className = "chart-empty";
+    empty.textContent = message;
+    body.appendChild(empty);
+    if (kind) { empty.classList.add("notice-" + kind); }
+}
+function chartErrorAll(message) {
+    document.querySelectorAll(".chart-card").forEach(function (card) {
+        chartEmpty(card.id, message, "error");
+    });
+}
+function setChartHelp(id, message) {
+    var card = document.getElementById(id);
+    if (card) { card.querySelector(".chart-help").textContent = message || ""; }
+}
+function renderBars(id, data, options) {
+    options = options || {};
+    if (!data || !data.length) { chartEmpty(id, options.empty || "No chart data is available."); return; }
+    var card = document.getElementById(id);
+    var body = card.querySelector(".chart-body");
+    var svg = chartSvg(body, options.height || 290);
+    var width = 680, height = options.height || 290, left = 54, right = 18, top = 14, bottom = 68;
+    var plotWidth = width - left - right, plotHeight = height - top - bottom;
+    var values = data
+        .filter(function (item) { return item.value !== null && item.value !== undefined && item.value !== ""; })
+        .map(function (item) { return Number(item.value); })
+        .filter(Number.isFinite);
+    if (!values.length) { chartEmpty(id, options.empty || "Values are unavailable."); return; }
+    var min = options.min !== undefined ? options.min : Math.min(0, Math.min.apply(null, values));
+    var max = options.max !== undefined ? options.max : Math.max(0, Math.max.apply(null, values));
+    if (max === min) { max = min + 1; }
+    var y = function (value) { return top + (max - value) / (max - min) * plotHeight; };
+    var zeroY = y(Math.max(min, Math.min(max, 0)));
+    svgElement(svg, "line", { x1: left, y1: zeroY, x2: width - right, y2: zeroY, class: "chart-axis" });
+    svgElement(svg, "line", { x1: left, y1: top, x2: left, y2: height - bottom, class: "chart-axis" });
+    var slot = plotWidth / data.length, barWidth = Math.max(4, Math.min(48, slot * .64));
+    data.forEach(function (item, index) {
+        if (item.value === null || item.value === undefined || item.value === "") { return; }
+        var value = Number(item.value);
+        if (!Number.isFinite(value)) { return; }
+        var barY = Math.min(y(value), zeroY);
+        var barH = Math.max(1, Math.abs(zeroY - y(value)));
+        var rect = svgElement(svg, "rect", {
+            x: left + slot * index + (slot - barWidth) / 2,
+            y: barY,
+            width: barWidth,
+            height: barH,
+            rx: 2,
+            fill: item.color || chartColors[index % chartColors.length],
+            class: "chart-mark"
+        });
+        svgElement(rect, "title", {}, String(item.label) + ": " + formatNumber(value) + (options.unit || ""));
+        svgElement(svg, "text", {
+            x: left + slot * index + slot / 2,
+            y: height - bottom + 16,
+            "text-anchor": "middle",
+            class: "chart-label"
+        }, String(item.label).length > 15 ? String(item.label).slice(0, 13) + "…" : item.label);
+        if (data.length < 14) {
+            svgElement(svg, "text", {
+                x: left + slot * index + slot / 2,
+                y: barY - 5,
+                "text-anchor": "middle",
+                class: "chart-label"
+            }, formatNumber(value));
+        }
+    });
+    svgElement(svg, "text", { x: 8, y: 17, class: "chart-label" }, options.axis || "");
+    svgElement(svg, "text", { x: width / 2, y: height - 8, "text-anchor": "middle", class: "chart-label" }, options.xAxis || "");
+}
+function renderGroupedBars(id, labels, groups, options) {
+    options = options || {};
+    if (!labels.length || !groups.length) { chartEmpty(id, options.empty || "No successful model metrics are available."); return; }
+    var card = document.getElementById(id), body = card.querySelector(".chart-body");
+    body.innerHTML = "";
+    var legend = document.createElement("div");
+    legend.className = "chart-legend";
+    groups.forEach(function (group, index) {
+        var entry = document.createElement("span"), marker = document.createElement("i");
+        marker.style.background = chartColors[index % chartColors.length];
+        entry.appendChild(marker);
+        entry.appendChild(document.createTextNode(group.name + (group.primary ? " (primary)" : "")));
+        legend.appendChild(entry);
+    });
+    body.appendChild(legend);
+    var svg = chartSvg(body, 290, true), width = 680, height = 290, left = 48, right = 12, top = 14, bottom = 64;
+    var plotWidth = width - left - right, plotHeight = height - top - bottom;
+    var vals = [];
+    groups.forEach(function (group) {
+        group.values.forEach(function (value) {
+            if (value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))) {
+                vals.push(Number(value));
+            }
+        });
+    });
+    if (!vals.length) { chartEmpty(id, options.empty || "Values are unavailable."); return; }
+    var min = Math.min(0, Math.min.apply(null, vals)), max = Math.max(1, Math.max.apply(null, vals));
+    var y = function (value) { return top + (max - value) / (max - min) * plotHeight; };
+    var zeroY = y(0);
+    svgElement(svg, "line", { x1: left, y1: zeroY, x2: width - right, y2: zeroY, class: "chart-axis" });
+    var slot = plotWidth / labels.length, groupWidth = slot * .82, barWidth = Math.max(2, groupWidth / groups.length);
+    labels.forEach(function (label, i) {
+        groups.forEach(function (group, j) {
+            if (group.values[i] === null || group.values[i] === undefined || group.values[i] === "") { return; }
+            var value = Number(group.values[i]);
+            if (!Number.isFinite(value)) { return; }
+            var barY = Math.min(y(value), zeroY);
+            var rect = svgElement(svg, "rect", {
+                x: left + slot * i + (slot - groupWidth) / 2 + barWidth * j,
+                y: barY,
+                width: Math.max(2, barWidth - 1),
+                height: Math.max(1, Math.abs(zeroY - y(value))),
+                fill: chartColors[j % chartColors.length],
+                class: "chart-mark"
+            });
+            svgElement(rect, "title", {}, label + " — " + group.name + ": " + formatNumber(value));
+        });
+        svgElement(svg, "text", {
+            x: left + slot * i + slot / 2,
+            y: height - bottom + 15,
+            "text-anchor": "middle",
+            class: "chart-label"
+        }, label.length > 14 ? label.slice(0, 12) + "…" : label);
+    });
+    svgElement(svg, "text", { x: 8, y: 17, class: "chart-label" }, options.axis || "");
+    svgElement(svg, "text", { x: width / 2, y: height - 8, "text-anchor": "middle", class: "chart-label" }, options.xAxis || "Algorithm");
+}
+function renderLineChart(id, curves, xLabel, yLabel) {
+    if (!curves || !curves.length) { chartEmpty(id, "ROC/AUC is unavailable: this model did not provide usable decision scores or class coverage.", "neutral"); return; }
+    var card = document.getElementById(id), body = card.querySelector(".chart-body");
+    body.innerHTML = "";
+    var legend = document.createElement("div"); legend.className = "chart-legend";
+    curves.forEach(function (curve, index) {
+        var entry = document.createElement("span"), marker = document.createElement("i");
+        marker.style.background = chartColors[index % chartColors.length];
+        entry.appendChild(marker);
+        entry.appendChild(document.createTextNode(curve.label + " (AUC " + formatNumber(curve.auc) + ")"));
+        legend.appendChild(entry);
+    });
+    body.appendChild(legend);
+    var svg = chartSvg(body, 270), left = 52, top = 15, plotW = 590, plotH = 205;
+    for (var tick = 0; tick <= 4; tick++) {
+        var pos = tick / 4;
+        svgElement(svg, "line", { x1: left, y1: top + plotH * pos, x2: left + plotW, y2: top + plotH * pos, class: "chart-gridline" });
+        svgElement(svg, "line", { x1: left + plotW * pos, y1: top, x2: left + plotW * pos, y2: top + plotH, class: "chart-gridline" });
+    }
+    svgElement(svg, "line", { x1: left, y1: top + plotH, x2: left + plotW, y2: top, stroke: "#94a3b8", "stroke-dasharray": "5 4" });
+    curves.forEach(function (curve, index) {
+        var coords = curve.false_positive_rate.map(function (x, i) {
+            return (left + x * plotW) + "," + (top + plotH - curve.true_positive_rate[i] * plotH);
+        }).join(" ");
+        var line = svgElement(svg, "polyline", {
+            points: coords,
+            fill: "none",
+            stroke: chartColors[index % chartColors.length],
+            "stroke-width": 2
+        });
+        svgElement(line, "title", {}, curve.label + ": AUC " + formatNumber(curve.auc));
+    });
+    svgElement(svg, "text", { x: left + plotW / 2, y: 258, "text-anchor": "middle", class: "chart-label" }, xLabel);
+    svgElement(svg, "text", { x: 14, y: top + plotH / 2, transform: "rotate(-90 14 " + (top + plotH / 2) + ")", "text-anchor": "middle", class: "chart-label" }, yLabel);
+}
+function renderHeatmap(id, labels, matrix) {
+    if (!labels || !labels.length || !matrix || !matrix.length) { chartEmpty(id, "No matrix data is available."); return; }
+    var svg = chartSvg(document.getElementById(id).querySelector(".chart-body"), 330);
+    var left = 105, top = 18, cell = Math.min(54, 530 / labels.length);
+    labels.forEach(function (row, i) {
+        svgElement(svg, "text", { x: left - 8, y: top + cell * i + cell / 2 + 4, "text-anchor": "end", class: "chart-label" }, row);
+        labels.forEach(function (col, j) {
+            var value = matrix[i][j];
+            var color = value !== null && value !== undefined && Number.isFinite(Number(value))
+                ? (Number(value) >= 0 ? "rgba(11,98,164," + Math.max(.08, Math.abs(value)) + ")" : "rgba(190,55,55," + Math.max(.08, Math.abs(value)) + ")")
+                : "#e2e8f0";
+            var rect = svgElement(svg, "rect", { x: left + cell * j, y: top + cell * i, width: cell - 2, height: cell - 2, rx: 2, fill: color });
+            svgElement(rect, "title", {}, row + " / " + col + ": " + (value == null ? "unavailable" : formatNumber(Number(value))));
+            svgElement(svg, "text", { x: left + cell * j + cell / 2, y: top + cell * i + cell / 2 + 4, "text-anchor": "middle", class: "chart-label" }, value == null ? "—" : formatNumber(Number(value)));
+        });
+        svgElement(svg, "text", { x: left + cell * i + cell / 2, y: top + cell * labels.length + 14, transform: "rotate(35 " + (left + cell * i + cell / 2) + " " + (top + cell * labels.length + 14) + ")", "text-anchor": "start", class: "chart-label" }, row);
+    });
+}
+function renderScatter(id, points, mode) {
+    if (!points || !points.actual || !points.actual.length) { chartEmpty(id, "No validation prediction data is available."); return; }
+    var actual = points.actual.map(Number), predicted = points.predicted.map(Number);
+    if (!actual.every(Number.isFinite) || !predicted.every(Number.isFinite)) { chartEmpty(id, "Regression prediction chart data is unavailable."); return; }
+    var min = Math.min.apply(null, actual.concat(predicted)), max = Math.max.apply(null, actual.concat(predicted));
+    if (min === max) { max = min + 1; }
+    var svg = chartSvg(document.getElementById(id).querySelector(".chart-body"), 290);
+    var left = 54, top = 16, plotW = 590, plotH = 220;
+    var sx = function (v) { return left + (v - min) / (max - min) * plotW; };
+    var sy = function (v) { return top + plotH - (v - min) / (max - min) * plotH; };
+    svgElement(svg, "line", { x1: left, y1: top + plotH, x2: left + plotW, y2: top + plotH, class: "chart-axis" });
+    svgElement(svg, "line", { x1: left, y1: top, x2: left, y2: top + plotH, class: "chart-axis" });
+    if (mode === "actual") {
+        svgElement(svg, "line", { x1: sx(min), y1: sy(min), x2: sx(max), y2: sy(max), stroke: "#d34b4b", "stroke-dasharray": "5 4" });
+        actual.forEach(function (v, i) {
+            var point = svgElement(svg, "circle", { cx: sx(v), cy: sy(predicted[i]), r: 4, fill: chartColors[0], opacity: .7 });
+            svgElement(point, "title", {}, "Actual: " + formatNumber(v) + ", predicted: " + formatNumber(predicted[i]));
+        });
+        svgElement(svg, "text", { x: left + plotW / 2, y: 278, "text-anchor": "middle", class: "chart-label" }, "Actual");
+        svgElement(svg, "text", { x: 15, y: top + plotH / 2, transform: "rotate(-90 15 " + (top + plotH / 2) + ")", "text-anchor": "middle", class: "chart-label" }, "Predicted");
+    } else {
+        var residuals = actual.map(function (v, i) { return v - predicted[i]; });
+        var residualMax = Math.max.apply(null, residuals.map(Math.abs)) || 1;
+        var ry = function (v) { return top + plotH / 2 - v / residualMax * plotH / 2; };
+        svgElement(svg, "line", { x1: left, y1: ry(0), x2: left + plotW, y2: ry(0), stroke: "#d34b4b", "stroke-dasharray": "5 4" });
+        predicted.forEach(function (v, i) {
+            var point = svgElement(svg, "circle", { cx: sx(v), cy: ry(residuals[i]), r: 4, fill: chartColors[1], opacity: .7 });
+            svgElement(point, "title", {}, "Predicted: " + formatNumber(v) + ", residual: " + formatNumber(residuals[i]));
+        });
+        svgElement(svg, "text", { x: left + plotW / 2, y: 278, "text-anchor": "middle", class: "chart-label" }, "Predicted");
+        svgElement(svg, "text", { x: 15, y: top + plotH / 2, transform: "rotate(-90 15 " + (top + plotH / 2) + ")", "text-anchor": "middle", class: "chart-label" }, "Residual (actual − predicted)");
+    }
+}
+function renderFeatureChart(data) {
+    var id = "chart-feature";
+    if (!data || !data.available) { chartEmpty(id, "Select a numeric feature to view its distribution."); return; }
+    var body = document.getElementById(id).querySelector(".chart-body");
+    var stats = data.statistics;
+    var line = document.createElement("div");
+    line.className = "chart-stat-line";
+    ["minimum", "maximum", "mean", "median", "skewness", "outlier_count"].forEach(function (name) {
+        var item = document.createElement("span");
+        item.textContent = name.replace("_", " ") + ": " + formatNumber(stats[name]);
+        line.appendChild(item);
+    });
+    renderBars(id, data.bins.map(function (bin) {
+        return { label: formatNumber((bin.start + bin.end) / 2), value: bin.count };
+    }), { axis: "Records", xAxis: data.feature + " histogram bin", height: 230 });
+    body = document.getElementById(id).querySelector(".chart-body");
+    body.insertBefore(line, body.firstChild);
+    var boxSvg = chartSvg(body, 120, true), left = 55, right = 20, y = 52;
+    var scale = function (v) { return left + (v - stats.minimum) / ((stats.maximum - stats.minimum) || 1) * (680 - left - right); };
+    svgElement(boxSvg, "line", { x1: scale(data.boxplot.minimum), y1: y, x2: scale(data.boxplot.maximum), y2: y, stroke: "#64748b", "stroke-width": 2 });
+    svgElement(boxSvg, "line", { x1: scale(data.boxplot.minimum), y1: y - 10, x2: scale(data.boxplot.minimum), y2: y + 10, stroke: "#64748b" });
+    svgElement(boxSvg, "line", { x1: scale(data.boxplot.maximum), y1: y - 10, x2: scale(data.boxplot.maximum), y2: y + 10, stroke: "#64748b" });
+    svgElement(boxSvg, "rect", { x: scale(stats.q1), y: y - 16, width: Math.max(2, scale(stats.q3) - scale(stats.q1)), height: 32, fill: "#d8ebf8", stroke: "#1479b8" });
+    svgElement(boxSvg, "line", { x1: scale(stats.median), y1: y - 16, x2: scale(stats.median), y2: y + 16, stroke: "#084a7d", "stroke-width": 2 });
+    data.boxplot.outliers.forEach(function (outlier) {
+        svgElement(boxSvg, "circle", { cx: scale(outlier), cy: y, r: 3, fill: "#d34b4b" });
+    });
+    svgElement(boxSvg, "text", { x: 10, y: 100, class: "chart-label" }, "Box plot · red points are IQR outliers");
+}
+function renderTaskCharts(data, taskType, selectedMetric) {
+    var models = data.models || {};
+    if (!models.available) {
+        ["chart-model-metrics", "chart-model-time", "chart-cv", "chart-confusion", "chart-roc", "chart-regression-actual", "chart-regression-residual"].forEach(function (id) {
+            chartEmpty(id, models.message || "Train this target to see model visualizations.");
+        });
+        return;
+    }
+    var metrics = models.metrics || {};
+    if (taskType === "classification") {
+        document.getElementById("regressionMetricControl").hidden = true;
+        var names = ["Accuracy", "Precision", "Recall", "F1", "Macro F1"];
+        var labels = (metrics[names[0]] || []).map(function (item) { return item.algorithm; });
+        var groups = names.map(function (name, index) {
+            return {
+                name: name,
+                primary: name === models.primary_metric,
+                values: (metrics[name] || []).map(function (item) { return item.value; })
+            };
+        });
+        renderGroupedBars("chart-model-metrics", labels, groups, { axis: "Score", xAxis: "Algorithm" });
+        chartEmpty("chart-regression-actual", "Actual-vs-predicted charts are for regression only.");
+        chartEmpty("chart-regression-residual", "Residual charts are for regression only.");
+    } else {
+        document.getElementById("regressionMetricControl").hidden = false;
+        var values = metrics[selectedMetric] || [];
+        renderBars("chart-model-metrics", values.map(function (item) {
+            return { label: item.algorithm, value: item.value };
+        }), { axis: selectedMetric + (selectedMetric === "R2" ? " (higher is better)" : " (lower is better)"), xAxis: "Algorithm" });
+        var evaluation = models.selected_model && models.selected_model.evaluation_data;
+        renderScatter("chart-regression-actual", evaluation, "actual");
+        renderScatter("chart-regression-residual", evaluation, "residual");
+        chartEmpty("chart-confusion", "Confusion matrices apply to classification only.");
+        chartEmpty("chart-roc", "ROC curves apply to classification only.");
+    }
+    renderBars("chart-model-time", (models.training_times || []).filter(function (item) {
+        return item.seconds !== null;
+    }).map(function (item) { return { label: item.algorithm, value: item.seconds }; }), {
+        axis: "Seconds · fit time",
+        xAxis: "Algorithm",
+        unit: " s"
+    });
+    var cv = models.cross_validation || [];
+    if (!cv.length) {
+        chartEmpty("chart-cv", "No successful cross-validation scores are available.");
+    } else {
+        renderBars("chart-cv", cv.map(function (item) {
+            return { label: item.algorithm, value: item.mean };
+        }), {
+            axis: "Mean " + (cv[0].metric || "CV score"),
+            xAxis: "Algorithm"
+        });
+        var svg = document.querySelector("#chart-cv .chart-body svg");
+        if (svg) {
+            var rects = svg.querySelectorAll("rect.chart-mark");
+            cv.forEach(function (item, index) {
+                var rect = rects[index];
+                if (!rect || item.std === null) { return; }
+                var yValue = Number(item.mean), error = Number(item.std);
+                var barY = Number(rect.getAttribute("y")), barH = Number(rect.getAttribute("height"));
+                var baseY = barY + barH;
+                var scaleY = barH / (yValue || 1);
+                var topY = barY - error * scaleY, bottomY = barY + error * scaleY;
+                svgElement(svg, "line", {
+                    x1: Number(rect.getAttribute("x")) + Number(rect.getAttribute("width")) / 2,
+                    x2: Number(rect.getAttribute("x")) + Number(rect.getAttribute("width")) / 2,
+                    y1: topY, y2: bottomY, stroke: "#102a43", "stroke-width": 2
+                });
+            });
+        }
+    }
+    var selected = models.selected_model || {};
+    if (taskType === "classification") {
+        if (selected.confusion_matrix) {
+            renderHeatmap("chart-confusion", selected.confusion_matrix.labels, selected.confusion_matrix.matrix);
+        } else {
+            chartEmpty("chart-confusion", "No confusion matrix was stored for this model.");
+        }
+        var roc = selected.evaluation_data && selected.evaluation_data.roc_curves;
+        renderLineChart("chart-roc", roc, "False positive rate", "True positive rate");
+    }
+}
+function renderMetaCharts(meta) {
+    if (!meta || !meta.trained) {
+        ["chart-meta-importance", "chart-meta-probability"].forEach(function (id) {
+            chartEmpty(id, "Cold-start rule-based selection is active; a trained meta-model is not available.");
+        });
+    } else {
+        renderBars("chart-meta-importance", (meta.feature_importance || []).map(function (item) {
+            return { label: item.feature, value: item.importance };
+        }), { axis: "Random Forest feature importance", xAxis: "Meta-feature" });
+        renderBars("chart-meta-probability", (meta.probabilities || []).map(function (item) {
+            return { label: item.algorithm, value: item.probability };
+        }), { axis: "Raw uncalibrated probability", xAxis: "Predicted algorithm", max: 1 });
+        setChartHelp("chart-meta-probability", "Uncalibrated classifier probabilities: descriptive only, not validated confidence or selection reliability.");
+    }
+    renderBars("chart-meta-frequency", (meta && meta.historical_winner_frequency || []).map(function (item) {
+        return { label: item.algorithm, value: item.datasets };
+    }), { axis: "Distinct dataset count", xAxis: "Task 1 winner", empty: "No historical Task 1 winners are recorded." });
+    var reliability = meta && meta.reliability;
+    if (!reliability || !reliability.available) {
+        chartEmpty("chart-meta-reliability", reliability && reliability.message || "Insufficient historical datasets to evaluate meta-learning reliability.");
+    } else {
+        var body = document.getElementById("chart-meta-reliability").querySelector(".chart-body");
+        body.innerHTML = "";
+        var summary = document.createElement("p");
+        summary.className = "stat-meta";
+        summary.textContent = "Leave-one-dataset-out · " + reliability.evaluation_datasets +
+            " distinct datasets · accuracy " + formatNumber(reliability.accuracy) +
+            " · macro F1 " + formatNumber(reliability.macro_f1);
+        renderHeatmap("chart-meta-reliability", reliability.labels, reliability.confusion_matrix);
+        body = document.getElementById("chart-meta-reliability").querySelector(".chart-body");
+        body.insertBefore(summary, body.firstChild);
+        setChartHelp("chart-meta-reliability", "Rows are actual Task 1 winners; columns are leave-one-dataset-out predictions.");
+    }
+}
+function renderComparisonCharts(comparison, taskType) {
+    if (!comparison || comparison.task_1_primary_value === null || comparison.task_2_primary_value === null) {
+        ["chart-comparison-metric", "chart-comparison-time", "chart-performance-gap", "chart-algorithm-match"].forEach(function (id) {
+            chartEmpty(id, "A successful Task 1 and Task 2 comparison is not available.");
+        });
+        return;
+    }
+    var metric = comparison.task_1_primary_metric;
+    renderBars("chart-comparison-metric", [
+        { label: "Task 1 actual benchmark", value: comparison.task_1_primary_value, color: chartColors[0] },
+        { label: "Task 2 predicted selection", value: comparison.task_2_primary_value, color: chartColors[1] }
+    ], { axis: metric + (taskType === "regression" ? " (lower is better)" : " (higher is better)"), xAxis: "Same held-out validation split" });
+    var timeItems = [
+        { label: "Task 1 total", value: comparison.task_1_execution_time_seconds, color: chartColors[0] },
+        { label: "Task 2 total", value: comparison.task_2_execution_time_seconds, color: chartColors[1] },
+        { label: "Task 1 winner fit", value: comparison.task_1_model_fit_seconds, color: chartColors[2] },
+        { label: "Task 2 model fit", value: comparison.task_2_training_time_seconds, color: chartColors[3] }
+    ].filter(function (item) {
+        return item.value !== null && item.value !== undefined && Number.isFinite(Number(item.value));
+    });
+    renderBars("chart-comparison-time", timeItems, { axis: "Seconds · timing definitions are labeled", xAxis: "End-to-end computation vs winner fit", unit: " s" });
+    var gap = comparison.performance_difference;
+    if (gap === null || gap === undefined) {
+        chartEmpty("chart-performance-gap", "Performance gap is unavailable for this comparison.");
+    } else {
+        renderBars("chart-performance-gap", [
+            { label: "Task 2 gap (positive = worse)", value: gap, color: gap > 0 ? "#d34b4b" : "#32845a" }
+        ], { axis: metric + " gap", xAxis: "Task 2 relative to Task 1" });
+        setChartHelp("chart-performance-gap",
+            "Task 1: " + formatNumber(comparison.task_1_primary_value) +
+            " · Task 2: " + formatNumber(comparison.task_2_primary_value) +
+            (comparison.relative_performance_difference === null
+                ? " · relative gap unavailable (Task 1 value is zero)"
+                : " · relative gap " + formatNumber(comparison.relative_performance_difference * 100) + "%"));
+    }
+    var card = document.getElementById("chart-algorithm-match");
+    var body = card.querySelector(".chart-body");
+    body.innerHTML = "";
+    var badge = document.createElement("div");
+    badge.className = comparison.algorithms_match ? "notice notice-ok" : "notice notice-neutral";
+    badge.style.textAlign = "center";
+    badge.style.padding = "1.5rem .7rem";
+    badge.innerHTML = "";
+    var strong = document.createElement("strong");
+    strong.style.fontSize = "1.25rem";
+    strong.textContent = comparison.algorithms_match ? "MATCH" : "NO MATCH";
+    badge.appendChild(strong);
+    var details = document.createElement("div");
+    details.textContent = "Task 1: " + comparison.task_1_algorithm + " · Task 2: " + comparison.task_2_algorithm;
+    badge.appendChild(details);
+    body.appendChild(badge);
+}
+
+var visualizationTimer;
+function loadVisualizations() {
+    if (!HAS_DATASET) {
+        chartErrorAll("Upload a dataset to generate charts from its actual values.");
+        return;
+    }
+    document.querySelectorAll(".chart-card").forEach(function (card) {
+        chartEmpty(card.id, "Loading chart data…");
+    });
+    var targetControl = document.getElementById("target");
+    var taskControl = document.getElementById("task_type");
+    var featureControl = document.getElementById("chartFeature");
+    var binsControl = document.getElementById("chartBins");
+    var modelControl = document.getElementById("visualModelSelector");
+    var params = new URLSearchParams();
+    if (targetControl && targetControl.value) { params.set("target", targetControl.value); }
+    if (taskControl && taskControl.value) { params.set("task_type", taskControl.value); }
+    if (featureControl && featureControl.value) { params.set("feature", featureControl.value); }
+    if (binsControl && binsControl.value) { params.set("bins", binsControl.value); }
+    if (modelControl && modelControl.value) { params.set("model_run_id", modelControl.value); }
+    fetchJSON("/api/visualizations?" + params.toString())
+        .then(function (result) {
+            if (!result.ok || !result.data) {
+                chartErrorAll(errorMessageFromPayload(result.data, "Visualization data could not be loaded."));
+                return;
+            }
+            var data = result.data;
+            var featureNames = data.dataset.feature_names || [];
+            var selectedFeature = data.dataset.selected_feature;
+            if (featureControl) {
+                var previous = featureControl.value;
+                featureControl.innerHTML = "";
+                featureNames.forEach(function (name) {
+                    var option = document.createElement("option");
+                    option.value = name;
+                    option.textContent = name;
+                    featureControl.appendChild(option);
+                });
+                if (featureNames.indexOf(previous) >= 0) { featureControl.value = previous; }
+                else if (selectedFeature) { featureControl.value = selectedFeature; }
+                featureControl.disabled = !featureNames.length;
+            }
+            if (modelControl) {
+                var previousModel = modelControl.value;
+                modelControl.innerHTML = "";
+                (data.models.available_models || []).forEach(function (model) {
+                    var option = document.createElement("option");
+                    option.value = model.run_id;
+                    option.textContent = (model.role === "task_2_meta_selection" ? "Task 2 — " : "Task 1 — ") + model.algorithm;
+                    modelControl.appendChild(option);
+                });
+                if ((data.models.available_models || []).some(function (model) { return model.run_id === previousModel; })) {
+                    modelControl.value = previousModel;
+                }
+                modelControl.disabled = !modelControl.options.length;
+            }
+            var dataset = data.dataset;
+            var target = dataset.target_distribution;
+            if (target.type === "classification") {
+                renderBars("chart-target", target.classes.map(function (item) {
+                    return { label: item.label, value: item.count };
+                }), { axis: "Record count", xAxis: "Target class" });
+                setChartHelp("chart-target", "Percentages: " + target.classes.map(function (item) {
+                    return item.label + " " + formatNumber(item.percentage) + "%";
+                }).join(" · ") + (target.imbalance_ratio !== null ? " · imbalance ratio " + formatNumber(target.imbalance_ratio) : ""));
+            } else if (target.type === "regression" && target.available) {
+                renderBars("chart-target", target.bins.map(function (item) {
+                    return { label: formatNumber((item.start + item.end) / 2), value: item.count };
+                }), { axis: "Record count", xAxis: "Target histogram bin" });
+                setChartHelp("chart-target", "Target mean " + formatNumber(target.mean) + " · median " + formatNumber(target.median));
+            } else {
+                chartEmpty("chart-target", "Select a target column and problem type to view its distribution.");
+            }
+            var missing = (dataset.missing_values || []).filter(function (item) { return item.count > 0; });
+            if (dataset.missing_value_total === 0) {
+                chartEmpty("chart-missing", "No missing values detected.", "ok");
+            } else {
+                renderBars("chart-missing", missing.map(function (item) {
+                    return { label: item.column, value: item.count };
+                }), { axis: "Missing records", xAxis: "Column", height: 280 });
+                setChartHelp("chart-missing", "Hover bars for counts. Percentages by column: " + missing.map(function (item) {
+                    return item.column + " " + formatNumber(item.percentage) + "%";
+                }).join(" · "));
+            }
+            renderFeatureChart(dataset.feature_distribution);
+            if (dataset.correlation.features.length) {
+                renderHeatmap("chart-correlation", dataset.correlation.features, dataset.correlation.matrix);
+                setChartHelp("chart-correlation", dataset.correlation.note + (dataset.correlation.truncated ? " Only the " + dataset.correlation.maximum_features + " highest-variance numeric features are shown." : ""));
+            } else {
+                chartEmpty("chart-correlation", dataset.correlation.note);
+            }
+            renderTaskCharts(data, data.task_type, document.getElementById("regressionMetricSelector").value);
+            renderMetaCharts(data.meta_learning);
+            renderComparisonCharts((data.models || {}).comparison, data.task_type);
+        })
+        .catch(function () {
+            chartErrorAll("Network error while loading visualization data.");
+        });
+}
+function scheduleVisualizations() {
+    window.clearTimeout(visualizationTimer);
+    visualizationTimer = window.setTimeout(loadVisualizations, 120);
+}
+["target", "task_type", "chartFeature", "chartBins", "visualModelSelector", "regressionMetricSelector"].forEach(function (id) {
+    var control = document.getElementById(id);
+    if (control) {
+        control.addEventListener("change", scheduleVisualizations);
+    }
+});
+if (HAS_DATASET) { loadVisualizations(); }
 </script>
 </body>
 </html>

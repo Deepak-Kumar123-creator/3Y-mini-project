@@ -41,6 +41,7 @@ from sklearn.metrics import (
     mean_absolute_error,
     precision_score,
     recall_score,
+    roc_curve,
     roc_auc_score,
     root_mean_squared_error,
     r2_score,
@@ -53,7 +54,12 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from meta_learning.meta_dataset import MetaDatasetManager
 from meta_learning.meta_feature_extractor import extract_meta_features
-from meta_learning.meta_learner import predict_algorithm, train_meta_model
+from meta_learning.meta_learner import (
+    meta_model_explanation,
+    predict_algorithm,
+    train_meta_model,
+)
+from visualization import build_visualization_payload
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -1100,6 +1106,93 @@ def _classification_roc_auc(
         return None
 
 
+def _evaluation_chart_data(
+    pipeline: Pipeline,
+    X: pd.DataFrame,
+    y_true: pd.Series,
+    y_pred: Any,
+    task_type: str,
+) -> dict[str, Any]:
+    """Keep a bounded, real sample of validation outcomes for diagnostic charts."""
+    row_count = len(y_true)
+    sample_indexes = np.linspace(
+        0,
+        max(row_count - 1, 0),
+        num=min(row_count, 500),
+        dtype=int,
+    )
+    actual = np.asarray(y_true)
+    predicted = np.asarray(y_pred)
+    payload: dict[str, Any] = {
+        "evaluation_rows": row_count,
+        "sample_rows": int(len(sample_indexes)),
+        "actual": [_json_safe(actual[index]) for index in sample_indexes],
+        "predicted": [_json_safe(predicted[index]) for index in sample_indexes],
+        "roc_curves": [],
+    }
+    if task_type != "classification":
+        return payload
+
+    classes = np.asarray(pipeline.named_steps["model"].classes_)
+    if len(classes) < 2:
+        return payload
+    try:
+        if hasattr(pipeline, "predict_proba"):
+            scores = np.asarray(pipeline.predict_proba(X))
+            score_source = "probability"
+        elif hasattr(pipeline, "decision_function"):
+            scores = np.asarray(pipeline.decision_function(X))
+            score_source = "decision score"
+        else:
+            return payload
+
+        curve_classes = classes if len(classes) > 2 else classes[1:2]
+        for class_index, label in enumerate(curve_classes):
+            positive_label = label if len(classes) > 2 else classes[1]
+            binary_truth = (actual == positive_label).astype(int)
+            if binary_truth.sum() == 0 or binary_truth.sum() == len(binary_truth):
+                continue
+            if scores.ndim == 1:
+                class_scores = scores if len(classes) == 2 else None
+            elif len(classes) == 2:
+                class_scores = scores[:, 1]
+            else:
+                class_scores = scores[:, class_index]
+            if class_scores is None:
+                continue
+            false_positive_rate, true_positive_rate, _ = roc_curve(
+                binary_truth,
+                class_scores,
+            )
+            point_indexes = np.linspace(
+                0,
+                len(false_positive_rate) - 1,
+                num=min(len(false_positive_rate), 150),
+                dtype=int,
+            )
+            payload["roc_curves"].append(
+                {
+                    "label": (
+                        f"{positive_label} vs rest" if len(classes) > 2 else str(positive_label)
+                    ),
+                    "auc": float(
+                        roc_auc_score(binary_truth, class_scores)
+                    ),
+                    "false_positive_rate": [
+                        float(false_positive_rate[index]) for index in point_indexes
+                    ],
+                    "true_positive_rate": [
+                        float(true_positive_rate[index]) for index in point_indexes
+                    ],
+                }
+            )
+        payload["roc_score_source"] = score_source
+        payload["roc_averaging"] = "one-vs-rest per class" if len(classes) > 2 else "binary"
+    except (ValueError, TypeError, IndexError):
+        payload["roc_curves"] = []
+    return payload
+
+
 def _regression_metrics(
     y_true: Any, y_pred: Any, warnings_sink: list[str]
 ) -> dict[str, float | None]:
@@ -1341,8 +1434,6 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
         artifact_location=MLFLOW_ARTIFACT_DIR.as_uri(),
     )
     results: list[dict[str, Any]] = []
-    benchmark_started = time.perf_counter()
-
     for candidate in candidate_models(task_type):
         name = candidate["name"]
         hyperparameters = _model_hyperparameters(candidate["model"])
@@ -1359,9 +1450,12 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
             "error": None,
             "run_id": None,
             "training_time_seconds": None,
+            "candidate_evaluation_seconds": None,
             "cross_validation": None,
+            "evaluation_data": None,
         }
 
+        candidate_started: float | None = None
         active_run = mlflow.start_run(experiment_id=experiment_id, run_name=name)
         entry["run_id"] = active_run.info.run_id
         try:
@@ -1384,9 +1478,9 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
                 bool(candidate["scale_numerical"]),
             )
             pipeline = Pipeline(steps=[("preprocessor", preprocessor), ("model", candidate["model"])])
-            start_time = time.perf_counter()
+            candidate_started = time.perf_counter()
             pipeline.fit(X_train, y_train)
-            training_time = time.perf_counter() - start_time
+            training_time = time.perf_counter() - candidate_started
             predictions = pipeline.predict(X_val)
 
             if task_type == "classification":
@@ -1426,6 +1520,14 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
                     "available": False,
                     "error": str(cv_error)[:300],
                 }
+            evaluation_data = _evaluation_chart_data(
+                pipeline,
+                X_val,
+                y_val,
+                predictions,
+                task_type,
+            )
+            candidate_evaluation_seconds = time.perf_counter() - candidate_started
 
             mlflow.log_metrics(
                 {key: value for key, value in metrics.items() if value is not None}
@@ -1446,6 +1548,11 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
                     "features": feature_schema,
                 },
             )
+            _log_json_artifact(
+                "evaluation",
+                "evaluation_data.json",
+                evaluation_data,
+            )
 
             entry.update(
                 status="success",
@@ -1454,10 +1561,17 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
                 confusion_matrix=confusion,
                 error=None,
                 training_time_seconds=round(training_time, 6),
+                candidate_evaluation_seconds=round(candidate_evaluation_seconds, 6),
                 cross_validation=cross_validation,
+                evaluation_data=evaluation_data,
             )
             mlflow.end_run(status="FINISHED")
         except Exception as exc:
+            if candidate_started is not None:
+                entry["candidate_evaluation_seconds"] = round(
+                    time.perf_counter() - candidate_started,
+                    6,
+                )
             entry["error"] = {
                 "type": type(exc).__name__,
                 "message": str(exc)[:500],
@@ -1491,7 +1605,13 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
 
     failures = [entry for entry in results if entry["status"] == "failed"]
     successes = [entry for entry in results if entry["status"] == "success"]
-    benchmark_training_time = time.perf_counter() - benchmark_started
+    benchmark_training_time = round(
+        sum(
+            item.get("candidate_evaluation_seconds") or 0.0
+            for item in results
+        ),
+        6,
+    )
     if not successes:
         raise HTTPException(
             status_code=422,
@@ -1537,6 +1657,7 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
         "warnings": reliability_notes,
     }
 
+    task_2_started = time.perf_counter()
     meta_features = extract_meta_features(dataframe, target, task_type)
     meta_manager = MetaDatasetManager(META_DATASET_FILE)
     historical_experiments = meta_manager.load()
@@ -1551,21 +1672,34 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
         meta_features,
         task_type,
     )
+    meta_explanation = meta_model_explanation(
+        meta_model,
+        meta_status,
+        meta_features,
+    )
     predicted_candidate = next(
         (candidate for candidate in candidate_models(task_type)
          if candidate["name"] == predicted_algorithm),
         None,
     )
+    meta_selection_seconds = time.perf_counter() - task_2_started
     task_2_entry: dict[str, Any] = {
         "predicted_algorithm": predicted_algorithm,
         "selection_method": meta_status["selection_method"],
         "meta_features": meta_features,
         "meta_status": meta_status,
         "confidence": meta_confidence,
+        "probabilities": meta_explanation["probabilities"],
+        "probability_type": meta_explanation["probability_type"],
+        "feature_importance": meta_explanation["feature_importance"],
         "status": "failed",
         "metrics": {},
         "primary": None,
         "training_time_seconds": None,
+        "meta_selection_seconds": round(meta_selection_seconds, 6),
+        "execution_time_seconds": None,
+        "evaluation_data": None,
+        "confusion_matrix": None,
         "run_id": None,
         "active_model": None,
         "error": None,
@@ -1604,11 +1738,18 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
                     X_val,
                     y_val,
                 )
-                _log_confusion_matrix_artifact(
-                    _confusion_matrix_record(y_val, task_2_predictions)
-                )
+                task_2_confusion_matrix = _confusion_matrix_record(y_val, task_2_predictions)
             else:
                 task_2_metrics = _regression_metrics(y_val, task_2_predictions, reliability_notes)
+                task_2_confusion_matrix = None
+            task_2_evaluation_data = _evaluation_chart_data(
+                task_2_pipeline,
+                X_val,
+                y_val,
+                task_2_predictions,
+                task_type,
+            )
+            task_2_execution_seconds = time.perf_counter() - task_2_started
 
             mlflow.log_params(
                 {
@@ -1621,6 +1762,8 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
             mlflow.log_metrics(
                 {key: value for key, value in task_2_metrics.items() if value is not None}
             )
+            if task_2_confusion_matrix is not None:
+                _log_confusion_matrix_artifact(task_2_confusion_matrix)
             mlflow.sklearn.log_model(
                 task_2_pipeline,
                 artifact_path="model",
@@ -1635,12 +1778,20 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
                     "features": feature_schema,
                 },
             )
+            _log_json_artifact(
+                "evaluation",
+                "evaluation_data.json",
+                task_2_evaluation_data,
+            )
             mlflow.end_run(status="FINISHED")
             task_2_entry.update(
                 status="success",
                 metrics=task_2_metrics,
                 primary=task_2_metrics[primary_metric],
                 training_time_seconds=round(task_2_training_time, 6),
+                execution_time_seconds=round(task_2_execution_seconds, 6),
+                evaluation_data=task_2_evaluation_data,
+                confusion_matrix=task_2_confusion_matrix,
             )
             task_2_entry["active_model"] = _register_selected_model(
                 task_2_entry,
@@ -1676,12 +1827,16 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
             if metric_direction == "maximize":
                 performance_difference = round(task_1_primary - task_2_primary, 6)
                 relative_performance_difference = (
-                    round(performance_difference / max(abs(task_1_primary), 1e-12), 6)
+                    round(performance_difference / abs(task_1_primary), 6)
+                    if task_1_primary != 0
+                    else None
                 )
             else:
                 performance_difference = round(task_2_primary - task_1_primary, 6)
                 relative_performance_difference = (
-                    round(performance_difference / max(abs(task_1_primary), 1e-12), 6)
+                    round(performance_difference / abs(task_1_primary), 6)
+                    if task_1_primary != 0
+                    else None
                 )
     comparison = {
         "task_1_algorithm": best_model["model"],
@@ -1692,11 +1847,16 @@ def run_pipeline(target: str = Form(...), task_type: str = Form(...)):
         "task_2_primary_value": task_2_entry["primary"],
         "performance_difference": performance_difference,
         "relative_performance_difference": relative_performance_difference,
-        "task_1_training_time_seconds": round(benchmark_training_time, 6),
+        "task_1_execution_time_seconds": benchmark_training_time,
+        "task_2_execution_time_seconds": task_2_entry["execution_time_seconds"],
+        "task_1_model_fit_seconds": best_model["training_time_seconds"],
         "task_2_training_time_seconds": task_2_entry["training_time_seconds"],
         "time_saved_seconds": (
-            round(benchmark_training_time - task_2_entry["training_time_seconds"], 6)
-            if task_2_entry["training_time_seconds"] is not None
+            round(
+                benchmark_training_time - task_2_entry["execution_time_seconds"],
+                6,
+            )
+            if task_2_entry["execution_time_seconds"] is not None
             else None
         ),
         "task_1_vs_task_2_metric": "Task 1 minus Task 2 for maximized metrics; Task 2 minus Task 1 for minimized metrics",
@@ -1983,6 +2143,66 @@ def dataset_preview(rows: int = 10):
         "rows": records,
         "quality_warnings": profile["quality_warnings"],
     }
+
+
+@app.get("/api/visualizations")
+def dataset_visualizations(
+    feature: str | None = None,
+    bins: int = 20,
+    model_run_id: str | None = None,
+    target: str | None = None,
+    task_type: str | None = None,
+):
+    """Return real dataset, evaluation, comparison, and meta-learning chart data."""
+    dataset_path = STATE.get("dataset_path")
+    if not isinstance(dataset_path, str) or not dataset_path:
+        raise HTTPException(status_code=409, detail="Upload a dataset before requesting visualizations.")
+    resolved_dataset = Path(dataset_path).resolve()
+    if (
+        not resolved_dataset.is_relative_to(UPLOAD_DIR.resolve())
+        or not resolved_dataset.is_file()
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="The stored dataset is unavailable. Upload the dataset again.",
+        )
+    if task_type is not None and task_type not in {"classification", "regression"}:
+        raise HTTPException(
+            status_code=422,
+            detail="task_type must be either 'classification' or 'regression'.",
+        )
+    try:
+        dataframe = pd.read_csv(resolved_dataset, on_bad_lines="error")
+    except (
+        OSError,
+        UnicodeDecodeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="The uploaded dataset could not be read for analysis.",
+        ) from exc
+
+    chart_target = target or STATE.get("target")
+    chart_task = task_type or STATE.get("task_type")
+    if chart_task is None and isinstance(chart_target, str):
+        detection = detect_problem_type(dataframe, chart_target)
+        chart_task = detection.get("detected")
+    if chart_target is not None and chart_target not in dataframe.columns:
+        raise HTTPException(status_code=422, detail="The selected target column was not found.")
+
+    history = MetaDatasetManager(META_DATASET_FILE).load()
+    return build_visualization_payload(
+        dataframe,
+        STATE,
+        history,
+        feature=feature,
+        bins=bins,
+        selected_run=model_run_id,
+        target=chart_target,
+        task_type=chart_task,
+    )
 
 
 @app.get("/api/experiments")

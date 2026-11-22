@@ -138,12 +138,48 @@ Responses distinguish a successful prediction (`prediction`, `model_version`,
 `registry_version`) from structured validation errors
 (`missing_features`, `unexpected_features`, `invalid_features` with row indices).
 
+## Dashboard visualizations
+
+The dashboard provides 19 data-driven charts across dataset analysis, Task 1
+benchmarking, Task 2 meta-learning, and their comparison. Dataset charts show
+the selected target distribution, missing values by column, a selectable
+numeric-feature histogram and IQR box plot, and Pearson correlations between
+numeric features (the target is excluded; at most 20 features are shown).
+Model charts show Task 1 candidate metrics, fit times, cross-validation
+stability, and either a validation confusion matrix/ROC curve or regression
+actual-versus-predicted and residual plots. Model-specific evaluation charts
+use a maximum of 500 actual held-out validation observations; ROC curves use
+the estimator's real probabilities or decision scores.
+
+Meta-learning charts include Random Forest feature importance and raw
+classifier probabilities when the meta-model is trained, historical Task 1
+winners counted once per dataset fingerprint, and leave-one-dataset-out
+reliability. Probabilities are explicitly uncalibrated and are not confidence
+or reliability estimates. Reliability is withheld until at least 10 distinct
+historical datasets are available. The comparison charts use the same held-out
+split for Task 1 and Task 2.
+
+`GET /api/visualizations` returns the source data for these charts. Optional
+query parameters are `target`, `task_type`, `feature`, `bins`, and
+`model_run_id`. Histogram bin counts are bounded to 5–60. Changing the selected
+target or task type does not reuse model results from a different training
+configuration.
+
+Task 1 total computation time is the sum of candidate fit, validation,
+cross-validation, and evaluation-chart calculation time. Task 2 total
+computation time includes meta-feature/history selection and its one model's
+fit, validation, and evaluation-chart calculation. Both exclude MLflow
+logging/artifact persistence; individual model-fit times are shown separately.
+These timing definitions are descriptive and should not be interpreted as a
+hardware-independent speed guarantee.
+
 ## MLflow tracking & model persistence
 
 - Every training creates an experiment named `autoflow_run_…` and one MLflow run
   per candidate with: task type, dataset fingerprint, model name, hyperparameters,
   metrics, run status, and — for failed candidates — `error_type`/`error_message` tags.
-- Run artifacts include the validation dataset, `evaluation/confusion_matrix.json`
+- Run artifacts include the validation dataset, bounded held-out
+  `evaluation/evaluation_data.json`, `evaluation/confusion_matrix.json`
   (classification), `inference/inference_schema.json`, and the complete logged model.
 - The selected model is additionally registered in the MLflow Model Registry
   under `autoflow-active-models` (each success creates a new READY version) and
@@ -170,6 +206,7 @@ Browse the runs with the MLflow UI if desired:
 | POST | `/upload` | Validate, profile, store CSV | 400 invalid CSV · 413 > 10 MiB · 415 not a CSV |
 | POST | `/train` | Train + select + register | 409 no dataset · 422 invalid request/all candidates failed |
 | GET | `/api/dataset/preview?rows=N` | Real preview + column summary (N ≤ 50) | 409 no dataset |
+| GET | `/api/visualizations?target=NAME&task_type=TYPE&feature=NAME&bins=N&model_run_id=ID` | Real dataset, validation, comparison, and meta-learning chart data | 409 no dataset · 422 invalid target/task/data |
 | GET | `/api/problem-detection?target=NAME` | Heuristic classification/regression suggestion | 409 no dataset |
 | GET | `/api/overview` | Computed dashboard counts and recent activity | — |
 | GET | `/api/experiments?limit=N` | Real MLflow run history (N ≤ 100) | 503 tracking store unavailable |
