@@ -1,36 +1,33 @@
-# Version control
-.git/
-.gitignore
 
-# Virtual environments
-.venv/
-venv/
+FROM python:3.12-slim
 
-# Python build/test artifacts
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    AUTOFLOW_DATA_DIR=/app/data \
+    MLFLOW_ARTIFACT_DIR=/app/mlruns
 
-# Application-managed data: never bake datasets, experiment history, trained
-# models, or runtime state into the image; they belong in persistent volumes.
-uploads/
-mlruns/
-mlflow.db
-autoflow_state.json
-data/
+WORKDIR /app
 
-# Local configuration (may contain deployment-specific values)
-.env
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Tests and docs are not needed inside the runtime image
-tests/
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Operating system noise
-Thumbs.db
-.DS_Store
+COPY . .
 
-# Docker files themselves are not part of the build context of other images
-Dockerfile
-.dockerignore
-docker-compose.yml
+RUN mkdir -p /app/data /app/mlruns
+
+RUN useradd --system --create-home --home-dir /home/autoflow --uid 10001 autoflow \
+    && chown -R autoflow:autoflow /app /home/autoflow
+
+USER autoflow
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)" || exit 1
+
+VOLUME ["/app/data", "/app/mlruns"]
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
