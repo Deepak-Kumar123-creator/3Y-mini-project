@@ -16,6 +16,13 @@ from fastapi import HTTPException, UploadFile
 from mlflow.tracking import MlflowClient
 
 import main
+from meta_learning.meta_feature_extractor import extract_meta_features
+from meta_learning.meta_learner import (
+    evaluate_meta_reliability,
+    meta_model_explanation,
+    predict_algorithm,
+    train_meta_model,
+)
 
 
 class PredictionRequest:
@@ -199,6 +206,298 @@ class DatasetProfileTests(unittest.TestCase):
             {"count": 3, "unique": 2, "top": "b", "frequency": 2},
         )
 
+    def test_quality_warnings_flag_columns_without_removing_them(self):
+        dataframe = pd.DataFrame(
+            {
+                "id": range(20),
+                "empty": [None] * 20,
+                "constant": ["same"] * 20,
+                "high_cardinality": ["value-" + str(index) for index in range(20)],
+                "infinite": [float("inf")] + list(range(19)),
+                "target": [0, 1] * 10,
+            }
+        )
+
+        profile = main.profile_dataframe(dataframe)
+        X, _, _, _ = main._training_data(dataframe, "target", "classification")
+
+        self.assertIn("empty", profile["empty_columns"])
+        self.assertIn("constant", profile["constant_columns"])
+        self.assertIn("high_cardinality", profile["high_cardinality_columns"])
+        self.assertEqual(profile["infinite_values"]["infinite"], 1)
+        self.assertIn("empty", X.columns)
+        self.assertTrue(profile["quality_warnings"])
+
+    def test_meta_features_and_cold_start_prediction_are_explicit(self):
+        dataframe = build_classification_dataset()
+        meta_features = extract_meta_features(dataframe, "diagnosis", "classification")
+        meta_model, meta_status = train_meta_model([], "classification")
+        predicted, confidence = predict_algorithm(
+            meta_model,
+            meta_status,
+            meta_features,
+            "classification",
+        )
+
+        self.assertIsNone(meta_model)
+        self.assertIn("Cold-Start", meta_status["selection_method"])
+        self.assertIsInstance(predicted, str)
+        self.assertIsNone(confidence)
+        self.assertGreater(len(main.candidate_models("classification")), 6)
+        integer_target = pd.DataFrame(
+            {"feature": range(100), "label": [index % 2 for index in range(100)]}
+        )
+        self.assertEqual(
+            main.detect_problem_type(integer_target, "label")["detected"],
+            "classification",
+        )
+
+    def test_meta_model_excludes_current_dataset_and_withholds_uncalibrated_confidence(self):
+        experiments = [
+            {
+                "dataset_fingerprint": f"dataset-{index}",
+                "task_type": "classification",
+                "actual_best_algorithm": "Algorithm A" if index % 2 else "Algorithm B",
+                "meta_features": {
+                    "rows": 100 + index,
+                    "columns": 5,
+                    "numeric_features": 3,
+                    "categorical_features": 2,
+                    "missing_percentage": 0.1,
+                    "duplicate_percentage": 0.0,
+                    "mean_skewness": 0.2,
+                    "mean_cardinality": 6,
+                    "target_classes": 2,
+                },
+            }
+            for index in range(9)
+        ]
+        model, status = train_meta_model(
+            experiments,
+            "classification",
+            exclude_fingerprint="dataset-8",
+        )
+
+        self.assertIsNotNone(model)
+        self.assertEqual(status["historical_experiments"], 8)
+        prediction, confidence = predict_algorithm(
+            model,
+            status,
+            experiments[0]["meta_features"],
+            "classification",
+        )
+        self.assertIn(prediction, {"Algorithm A", "Algorithm B"})
+        self.assertIsNone(confidence)
+        explanation = meta_model_explanation(model, status, experiments[0]["meta_features"])
+        self.assertEqual(len(explanation["feature_importance"]), 9)
+        self.assertEqual(len(explanation["probabilities"]), 2)
+        self.assertEqual(
+            explanation["probability_type"],
+            "raw_uncalibrated_classifier_probability",
+        )
+
+
+class VisualizationDataTests(unittest.TestCase):
+    def test_visualization_endpoint_reads_uploaded_data_and_bounds_bins(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            upload_directory = Path(temporary_directory) / "uploads"
+            upload_directory.mkdir()
+            dataset_path = upload_directory / "dataset.csv"
+            build_classification_dataset().to_csv(dataset_path, index=False)
+            with (
+                patch.object(main, "UPLOAD_DIR", upload_directory),
+                patch.object(main, "META_DATASET_FILE", Path(temporary_directory) / "meta.json"),
+                patch.dict(
+                    main.STATE,
+                    {
+                        "dataset_path": str(dataset_path),
+                        "target": "diagnosis",
+                        "task_type": "classification",
+                    },
+                    clear=True,
+                ),
+            ):
+                payload = main.dataset_visualizations(bins=100)
+
+        self.assertEqual(len(payload["dataset"]["feature_distribution"]["bins"]), 60)
+        self.assertEqual(payload["models"]["available"], False)
+        with self.assertRaises(HTTPException) as error:
+            main.dataset_visualizations(task_type="unknown")
+        self.assertEqual(error.exception.status_code, 422)
+
+    def test_classification_dataset_and_model_visualizations_use_real_data(self):
+        dataframe = pd.DataFrame(
+            {
+                "signal": [1.0, 2.0, np.nan, 4.0, 5.0, 6.0],
+                "noise": [6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+                "label": ["a", "a", "a", "b", "b", "b"],
+            }
+        )
+        evaluation = {
+            "evaluation_rows": 6,
+            "sample_rows": 6,
+            "actual": ["a", "a", "a", "b", "b", "b"],
+            "predicted": ["a", "a", "b", "b", "b", "a"],
+            "roc_curves": [
+                {
+                    "label": "b",
+                    "auc": 0.75,
+                    "false_positive_rate": [0.0, 0.5, 1.0],
+                    "true_positive_rate": [0.0, 0.8, 1.0],
+                }
+            ],
+        }
+        best = {
+            "model": "Logistic Regression",
+            "run_id": "best-run",
+            "status": "success",
+            "metrics": {"Accuracy": 0.8, "F1": 0.75},
+            "training_time_seconds": 0.02,
+            "cross_validation": {"mean": 0.7, "std": 0.1, "metric": "weighted F1"},
+            "confusion_matrix": {
+                "labels": ["a", "b"],
+                "matrix": [[2, 1], [1, 2]],
+            },
+            "evaluation_data": evaluation,
+        }
+        state = {
+            "target": "label",
+            "task_type": "classification",
+            "dataset_fingerprint": "fp-classification",
+            "primary_metric": "F1",
+            "results": [best],
+            "best_model": best,
+            "task_2": {
+                "status": "success",
+                "predicted_algorithm": "Decision Tree Classifier",
+                "run_id": "task2-run",
+                "metrics": {"Accuracy": 0.7, "F1": 0.67},
+                "training_time_seconds": 0.01,
+                "evaluation_data": evaluation,
+                "meta_status": {"trained": False},
+            },
+            "comparison": {
+                "task_1_algorithm": "Logistic Regression",
+                "task_2_algorithm": "Decision Tree Classifier",
+                "task_1_primary_metric": "F1",
+                "task_1_primary_value": 0.75,
+                "task_2_primary_value": 0.67,
+                "performance_difference": 0.08,
+                "relative_performance_difference": 0.1067,
+                "algorithms_match": False,
+                "task_1_execution_time_seconds": 0.2,
+                "task_2_execution_time_seconds": 0.1,
+                "task_1_model_fit_seconds": 0.02,
+                "task_2_training_time_seconds": 0.01,
+            },
+        }
+        historical = [
+            {
+                "dataset_fingerprint": "history-a",
+                "task_type": "classification",
+                "target": "label",
+                "actual_best_algorithm": "Logistic Regression",
+                "meta_features": {"rows": 20},
+            },
+            {
+                "dataset_fingerprint": "history-a",
+                "task_type": "classification",
+                "target": "different_target",
+                "actual_best_algorithm": "Random Forest Classifier",
+                "meta_features": {"rows": 21},
+            },
+        ]
+
+        payload = main.build_visualization_payload(
+            dataframe,
+            state,
+            historical,
+            selected_run="task2-run",
+        )
+
+        self.assertEqual(payload["dataset"]["target_distribution"]["classes"][0]["count"], 3)
+        self.assertEqual(payload["dataset"]["missing_value_total"], 1)
+        self.assertEqual(payload["dataset"]["correlation"]["features"], ["signal", "noise"])
+        self.assertEqual(payload["models"]["selected_model"]["run_id"], "task2-run")
+        self.assertEqual(payload["models"]["selected_model"]["evaluation_data"], evaluation)
+        self.assertEqual(payload["meta_learning"]["historical_winner_frequency"], [
+            {"algorithm": "Random Forest Classifier", "datasets": 1}
+        ])
+        self.assertFalse(payload["meta_learning"]["reliability"]["available"])
+
+    def test_regression_target_histogram_feature_stats_and_task_outputs(self):
+        dataframe = build_regression_dataset()
+        dataframe.loc[dataframe.index[-1], "measurement"] = 1000.0
+        evaluation = {
+            "actual": [1.0, 2.0, 3.0],
+            "predicted": [1.2, 1.8, 3.1],
+            "roc_curves": [],
+        }
+        model = {
+            "model": "Linear Regression",
+            "run_id": "regression-run",
+            "status": "success",
+            "metrics": {"MAE": 0.1, "RMSE": 0.2, "R2": 0.9},
+            "training_time_seconds": 0.03,
+            "cross_validation": {"mean": 0.4, "std": 0.05, "metric": "RMSE"},
+            "evaluation_data": evaluation,
+        }
+        state = {
+            "target": "target",
+            "task_type": "regression",
+            "dataset_fingerprint": "fp-regression",
+            "primary_metric": "RMSE",
+            "results": [model],
+            "best_model": model,
+            "task_2": {},
+            "comparison": {},
+        }
+
+        payload = main.build_visualization_payload(dataframe, state, [], feature="measurement")
+
+        self.assertEqual(payload["dataset"]["target_distribution"]["type"], "regression")
+        self.assertEqual(payload["dataset"]["target_distribution"]["count"], len(dataframe))
+        self.assertGreater(payload["dataset"]["feature_distribution"]["statistics"]["outlier_count"], 0)
+        self.assertEqual(payload["models"]["metrics"]["RMSE"][0]["value"], 0.2)
+        self.assertEqual(payload["models"]["task_1_evaluation"], evaluation)
+        self.assertEqual(
+            payload["meta_learning"]["reliability"]["message"],
+            "Insufficient historical datasets to evaluate meta-learning reliability.",
+        )
+
+    def test_meta_reliability_is_dataset_level_and_withheld_below_threshold(self):
+        records = [
+            {
+                "dataset_fingerprint": f"unique-{index}",
+                "task_type": "classification",
+                "target": "label",
+                "actual_best_algorithm": "A" if index % 2 else "B",
+                "meta_features": {
+                    "rows": index + 10,
+                    "columns": 3,
+                    "numeric_features": 2,
+                    "categorical_features": 1,
+                    "missing_percentage": 0,
+                    "duplicate_percentage": 0,
+                    "mean_skewness": 0,
+                    "mean_cardinality": 2,
+                    "target_classes": 2,
+                },
+            }
+            for index in range(10)
+        ]
+        duplicate = dict(records[0], target="other-label")
+        result = evaluate_meta_reliability(
+            records + [duplicate],
+            "classification",
+        )
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["evaluation_datasets"], 10)
+        self.assertEqual(result["split_method"], "leave-one-dataset-out")
+        self.assertIn("accuracy", result)
+        self.assertIn("confusion_matrix", result)
+
 
 class StartupAndRouteTests(unittest.TestCase):
     """Application startup behaves like a fresh boot: schema init, routes, health."""
@@ -257,6 +556,7 @@ class StartupAndRouteTests(unittest.TestCase):
             ("POST", "/upload"),
             ("POST", "/train"),
             ("GET", "/api/dataset/preview"),
+            ("GET", "/api/visualizations"),
             ("GET", "/api/experiments"),
             ("GET", "/api/model/schema"),
             ("POST", "/predict"),
@@ -539,6 +839,7 @@ class TrainingTestBase(unittest.TestCase):
             patch.object(main, "UPLOAD_DIR", self.directory / "uploads"),
             patch.object(main, "STATE_FILE", self.directory / "state.json"),
             patch.object(main, "MLFLOW_ARTIFACT_DIR", self.directory / "mlruns"),
+            patch.object(main, "META_DATASET_FILE", self.directory / "meta_data" / "experiments.json"),
             patch.dict(
                 main.STATE,
                 {
@@ -561,6 +862,9 @@ class TrainingTestBase(unittest.TestCase):
                     "reliability": None,
                     "feature_schema": None,
                     "active_model": None,
+                    "task_2": None,
+                    "comparison": None,
+                    "meta_features": None,
                 },
                 clear=True,
             ),
@@ -617,11 +921,46 @@ class TrainingPersistenceTests(TrainingTestBase):
         self.assertEqual(main.STATE["task_type"], "classification")
         self.assertEqual(main.STATE["primary_metric"], "F1")
         self.assertEqual(main.STATE["metric_direction"], "maximize")
-        self.assertEqual(len(main.STATE["results"]), 3)
+        self.assertEqual(
+            len(main.STATE["results"]),
+            len(main.candidate_models("classification")),
+        )
         self.assertTrue(
             all(entry["status"] == "success" for entry in main.STATE["results"])
         )
         self.assertIn("Majority-Class Baseline", [entry["model"] for entry in main.STATE["results"]])
+        task_2 = main.STATE["task_2"]
+        self.assertEqual(task_2["status"], "success")
+        self.assertIn(
+            task_2["predicted_algorithm"],
+            [entry["model"] for entry in main.STATE["results"]],
+        )
+        self.assertIn("Cold-Start", task_2["selection_method"])
+        self.assertIsNone(task_2["confidence"])
+        self.assertEqual(
+            main.STATE["comparison"]["task_1_algorithm"],
+            main.STATE["best_model"]["model"],
+        )
+        task_2_prediction = predict_aspect(
+            {
+                "model_run_id": task_2["run_id"],
+                "features": {"measurement": 0.5, "category": "unseen"},
+            }
+        )
+        self.assertEqual(task_2_prediction["status"], "success")
+        self.assertEqual(task_2_prediction["model_version"], task_2["run_id"])
+        download = main.download_model(task_2["run_id"])
+        self.assertEqual(download.status_code, 200)
+        self.assertTrue(download.headers["content-disposition"].endswith(".joblib\""))
+        self.assertIn("meta-learning", download.headers["content-disposition"])
+        self.assertNotIn(task_2["run_id"], download.headers["content-disposition"])
+        benchmark_download = main.download_model(main.STATE["best_model"]["run_id"])
+        self.assertEqual(benchmark_download.status_code, 200)
+        self.assertIn("benchmark-", benchmark_download.headers["content-disposition"])
+        self.assertNotIn(
+            main.STATE["best_model"]["run_id"],
+            benchmark_download.headers["content-disposition"],
+        )
         for entry in main.STATE["results"]:
             self.assertEqual(entry["primary_metric"], "F1")
             self.assertIn("confusion_matrix", entry)
@@ -660,9 +999,17 @@ class TrainingPersistenceTests(TrainingTestBase):
             )
         )
         self.assertEqual(len(registered_versions), 1)
-        self.assertEqual(str(registered_versions[0].run_id), active_model["run_id"])
+        task_1_version = registered_versions[0]
+        self.assertEqual(str(task_1_version.run_id), active_model["run_id"])
+        task_2_versions = list(
+            self.mlflow_client().search_model_versions(
+                f"name = '{main.META_MODEL_REGISTRY_NAME}'"
+            )
+        )
+        self.assertEqual(len(task_2_versions), 1)
+        self.assertEqual(str(task_2_versions[0].run_id), main.STATE["task_2"]["run_id"])
         registered_tags = self.mlflow_client().get_model_version(
-            main.ACTIVE_MODEL_REGISTRY_NAME, registered_versions[0].version
+            main.ACTIVE_MODEL_REGISTRY_NAME, task_1_version.version
         ).tags
         self.assertEqual(registered_tags.get("task_type"), "classification")
         self.assertEqual(registered_tags.get("run_id"), active_model["run_id"])
@@ -684,9 +1031,30 @@ class TrainingPersistenceTests(TrainingTestBase):
         self.assertEqual(main.STATE["best_model"]["run_id"], prediction["model_version"])
 
         runs = self.runs_for(main.STATE["run_group"])
-        self.assertEqual(len(runs), 3)
+        self.assertEqual(len(runs), len(main.STATE["results"]) + 1)
         entries = {entry["run_id"]: entry for entry in main.STATE["results"]}
         for run in runs:
+            evaluation_artifacts = {
+                artifact.path
+                for artifact in self.mlflow_client().list_artifacts(run.info.run_id, "evaluation")
+            }
+            self.assertIn("evaluation/evaluation_data.json", evaluation_artifacts)
+            evaluation_data_path = self.mlflow_client().download_artifacts(
+                run.info.run_id,
+                "evaluation/evaluation_data.json",
+            )
+            evaluation_data = json.loads(
+                Path(evaluation_data_path).read_text(encoding="utf-8")
+            )
+            self.assertLessEqual(evaluation_data["sample_rows"], 500)
+            if run.data.params.get("model_role") == "task_2_meta_selection":
+                self.assertEqual(run.info.status, "FINISHED")
+                self.assertEqual(run.data.params["model_type"], main.STATE["task_2"]["predicted_algorithm"])
+                self.assertEqual(
+                    evaluation_data,
+                    main.STATE["task_2"]["evaluation_data"],
+                )
+                continue
             entry = entries[run.info.run_id]
             self.assertEqual(run.info.status, "FINISHED")
             self.assertEqual(run.data.params["task_type"], "classification")
@@ -704,11 +1072,8 @@ class TrainingPersistenceTests(TrainingTestBase):
             }
             self.assertIn("evaluation", artifact_paths)
             self.assertIn("inference", artifact_paths)
-            evaluation_artifacts = {
-                artifact.path
-                for artifact in self.mlflow_client().list_artifacts(run.info.run_id, "evaluation")
-            }
             self.assertIn("evaluation/confusion_matrix.json", evaluation_artifacts)
+            self.assertEqual(evaluation_data, entry["evaluation_data"])
             # MLflow 3 stores logged models in the logged-model store; loading via
             # the runs:/ URI is how the application itself restores the artifact.
             loaded_model = main.mlflow.sklearn.load_model(f"runs:/{run.info.run_id}/model")
@@ -733,7 +1098,7 @@ class RegressionTrainingTests(TrainingTestBase):
         self.assertEqual(state["metric_direction"], "minimize")
 
         results = state["results"]
-        self.assertEqual(len(results), 3)
+        self.assertEqual(len(results), len(main.candidate_models("regression")))
         self.assertTrue(all(entry["status"] == "success" for entry in results))
         names = [entry["model"] for entry in results]
         self.assertIn("Median Baseline", names)
@@ -762,9 +1127,13 @@ class RegressionTrainingTests(TrainingTestBase):
         )
 
         runs = self.runs_for(state["run_group"])
-        self.assertEqual(len(runs), 3)
+        self.assertEqual(len(runs), len(results) + 1)
         entries = {entry["run_id"]: entry for entry in results}
         for run in runs:
+            if run.data.params.get("model_role") == "task_2_meta_selection":
+                self.assertEqual(run.info.status, "FINISHED")
+                self.assertEqual(run.data.params["model_type"], state["task_2"]["predicted_algorithm"])
+                continue
             entry = entries[run.info.run_id]
             self.assertEqual(run.info.status, "FINISHED")
             self.assertEqual(run.data.params["task_type"], "regression")
@@ -787,7 +1156,9 @@ class RegressionTrainingTests(TrainingTestBase):
             self.assertTrue(hasattr(loaded_model, "predict"))
 
         forest_run = next(
-            run for run in runs if entries[run.info.run_id]["model"] == "Random Forest Regressor"
+            run for run in runs
+            if run.data.params.get("model_role") != "task_2_meta_selection"
+            and entries[run.info.run_id]["model"] == "Random Forest Regressor"
         )
         self.assertEqual(forest_run.data.params["model_n_estimators"], "100")
         self.assertEqual(forest_run.data.params["model_random_state"], "42")
@@ -1247,30 +1618,35 @@ class DashboardTemplateTests(unittest.TestCase):
 
         for needle in (
             "Overview",
-            "Dataset management",
-            "Model training",
-            "Experiments",
+            "Dataset",
+            "Training",
+            "Meta-Learning",
+            "Task Comparison",
             "Predictions",
             "clinical.csv",
             "60 rows",
-            "data-*",
+            "data-has-dataset",
             "data-has-model",
             "2.4043",
             "Random Forest Regressor",
             "selected",
-            "runtime",  # substring of RuntimeError failure note
             "synthetic failure",
             "Evaluation notices",
             "Validation split contains only 12 rows.",
-            "registry v3",
-            "autoflow_run_abc",
         ):
             self.assertIn(needle, html)
+        self.assertIn('<option value="target" selected>', html)
+        self.assertIn('<option value="regression" selected>', html)
+        self.assertNotIn("Experiments", html)
+        self.assertNotIn("Run ID", html)
+        self.assertNotIn("fingerprint", html)
+        self.assertNotIn("registry v", html)
+        self.assertNotIn("autoflow_run_abc", html)
 
     def test_empty_state_renders_true_empty_states(self):
         html = self.render_dashboard(state_template())
 
-        self.assertIn("None", html)
+        self.assertIn("Not uploaded", html)
         self.assertIn("No training has been run yet.", html)
         self.assertIn("No evaluated models yet. Run training to generate real results.", html)
         self.assertIn("No trained model yet. Train a model first", html)
@@ -1297,7 +1673,7 @@ class DashboardTemplateTests(unittest.TestCase):
             }
         )
         html = self.render_dashboard(populated)
-        self.assertIn("FAILED", html)
+        self.assertIn("Failed", html)
         self.assertIn("row-failed", html)
 
 
@@ -1348,7 +1724,7 @@ class ExperimentsEndpointTests(TrainingTestBase):
 
         response = main.get_experiments(limit=25)
 
-        self.assertEqual(response["count"], 3)
+        self.assertEqual(response["count"], len(main.STATE["results"]) + 1)
         self.assertEqual(response["experiments"], 1)
         start_times = [run["start_time"] for run in response["runs"]]
         for index in range(len(start_times) - 1):
@@ -1360,7 +1736,12 @@ class ExperimentsEndpointTests(TrainingTestBase):
             self.assertIn(run["run_name"], {
                 "Majority-Class Baseline",
                 "Logistic Regression",
+                "Decision Tree Classifier",
                 "Random Forest Classifier",
+                "Support Vector Machine",
+                "K-Nearest Neighbors",
+                "Naive Bayes",
+                "Gradient Boosting Classifier",
             })
             self.assertEqual(run["primary_metric"], "F1")
             self.assertIsInstance(run["metrics"]["F1"], (int, float))
@@ -1470,12 +1851,15 @@ class DashboardJourneyTests(TrainingTestBase):
         # Step 3: train regression models.
         train_response = main.run_pipeline("target", "regression")
         self.assertEqual(train_response.status_code, 200)
-        self.assertEqual(len(main.STATE["results"]), 3)
+        self.assertEqual(
+            len(main.STATE["results"]),
+            len(main.candidate_models("regression")),
+        )
         self.assertEqual(main.STATE["primary_metric"], "RMSE")
 
         # Step 4: review real MLflow-backed experiments.
         experiments = main.get_experiments(limit=10)
-        self.assertEqual(experiments["count"], 3)
+        self.assertEqual(experiments["count"], len(main.STATE["results"]) + 1)
         self.assertTrue(
             all(run["status"] == "FINISHED" for run in experiments["runs"])
         )

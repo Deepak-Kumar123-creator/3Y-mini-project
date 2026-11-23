@@ -77,7 +77,6 @@
 
         section { scroll-margin-top: 4.5rem; margin-bottom: 1.6rem; }
         .section-title { font-size: 1.15rem; margin: 0 0 .2rem; }
-        .section-sub { color: var(--ink-faint); margin: 0 0 1rem; font-size: .93rem; }
 
         .card {
             background: var(--surface);
@@ -95,7 +94,6 @@
         .stat-label { text-transform: uppercase; letter-spacing: .07em; font-size: .72rem; font-weight: 700; color: var(--ink-faint); }
         .stat-value { font-weight: 700; font-size: 1.35rem; margin: .15rem 0 .35rem; word-break: break-word; }
         .stat-meta { font-size: .82rem; color: var(--ink-soft); }
-        .stat-meta code, td code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; }
 
         .badge {
             display: inline-block;
@@ -106,10 +104,7 @@
             border: 1px solid transparent;
             vertical-align: middle;
         }
-        .badge-finished { background: var(--ok-soft); color: var(--ok); border-color: #bfe8ce; }
         .badge-failed { background: var(--danger-soft); color: var(--danger); border-color: #f5c2c2; }
-        .badge-running { background: var(--warn-soft); color: var(--warn); border-color: #f1dcae; }
-        .badge-neutral { background: #eef2f7; color: var(--ink-soft); border-color: #d7dee8; }
         .badge-warn { background: var(--warn-soft); color: var(--warn); border-color: #f1dcae; }
         .badge-ok { background: var(--ok-soft); color: var(--ok); border-color: #bfe8ce; }
 
@@ -207,17 +202,28 @@
 
         .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
         .field-hint { font-size: .75rem; color: var(--ink-faint); margin-top: .25rem; }
+        .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
+        .chart-card { min-width: 0; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: .9rem; }
+        .chart-grid .chart-card.chart-wide { grid-column: 1 / -1; }
+        .chart-card h4 { font-size: .9rem; margin: 0 0 .4rem; }
+        .chart-body { width: 100%; overflow-x: auto; }
+        .chart-body svg { display: block; width: 100%; min-width: 560px; height: auto; overflow: visible; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .chart-axis { stroke: #94a3b8; stroke-width: 1; }
+        .chart-gridline { stroke: #e2e8f0; stroke-width: 1; }
+        .chart-label { fill: #42536b; }
+        .chart-mark { stroke: #fff; stroke-width: 1; }
+        .chart-legend { display: flex; flex-wrap: wrap; gap: .45rem .8rem; font-size: .75rem; margin: .35rem 0; }
+        .chart-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+        .chart-legend i { width: .65rem; height: .65rem; display: inline-block; border-radius: 2px; }
         .missing-toggle { display: flex; align-items: center; gap: .4rem; font-size: .78rem; color: var(--ink-soft); margin-top: .3rem; font-weight: 500; }
         .missing-toggle input { width: auto; }
 
-        .mono-left { text-align: left; }
-        details.matrix summary { cursor: pointer; font-size: .8rem; color: var(--accent); }
-        details.matrix { margin-top: .35rem; }
-        details.matrix pre { margin: .4rem 0 0; }
-
-        .fingerprint { word-break: break-all; }
-
-        footer.help { color: var(--ink-faint); font-size: .78rem; margin-top: .8rem; }
+        .metric-list { display: flex; flex-wrap: wrap; gap: .45rem .9rem; margin: .5rem 0 0; padding: 0; list-style: none; }
+        .metric-list li { font-size: .84rem; color: var(--ink-soft); }
+        .metric-list strong { color: var(--ink); }
+        .table-score { font-weight: 700; font-size: 1rem; white-space: nowrap; }
+        .table-algorithm { min-width: 180px; }
+        [hidden] { display: none !important; }
 
         @media (max-width: 1024px) {
             .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -226,7 +232,7 @@
         @media (max-width: 640px) {
             main { padding: 1.1rem .8rem 3rem; }
             .card { padding: .95rem; }
-            .grid, .field-grid { grid-template-columns: 1fr; }
+            .grid, .field-grid, .chart-grid { grid-template-columns: 1fr; }
             .topnav a { padding: .35rem .6rem; font-size: .84rem; }
             .btn { width: 100%; justify-content: center; }
             .stat-value { font-size: 1.15rem; }
@@ -243,24 +249,22 @@
         <a href="#overview">Overview</a>
         <a href="#dataset">Dataset</a>
         <a href="#training">Training</a>
-        <a href="#experiments">Experiments</a>
+        <a href="#meta-learning">Meta-Learning</a>
+        <a href="#task-comparison">Task Comparison</a>
         <a href="#predictions">Predictions</a>
     </nav>
 </header>
 
 <main>
-    <!-- ============ 1. OVERVIEW ============ -->
     <section id="overview" aria-labelledby="overview-title">
         <h1 class="section-title" id="overview-title">Overview</h1>
-        <p class="section-sub">Current state loaded from the persisted application state on this server.</p>
         <div class="grid">
             <div class="card">
                 <span class="stat-label">Dataset</span>
-                <p class="stat-value">{% if state.dataset_path %}{{ state.filename }}{% else %}None{% endif %}</p>
+                <p class="stat-value">{% if state.dataset_path %}{{ state.filename }}{% else %}Not uploaded{% endif %}</p>
                 <p class="stat-meta">
                     {% if state.dataset_path %}
-                    {{ state.rows }} rows &middot; {{ state.columns_count }} columns<br>
-                    <span class="fingerprint mono">{% if state.dataset_fingerprint %}fingerprint {{ state.dataset_fingerprint[:12] }}&hellip;{% endif %}</span>
+                    {{ state.rows }} rows &middot; {{ state.columns_count }} columns
                     {% else %}Upload a CSV in the Dataset section.{% endif %}
                 </p>
             </div>
@@ -269,8 +273,7 @@
                 <p class="stat-value">{% if state.task_type %}{{ state.task_type|capitalize }}{% else %}&mdash;{% endif %}</p>
                 <p class="stat-meta">
                     {% if state.task_type %}
-                    target: {{ state.target }}<br>
-                    selection: {{ state.primary_metric }} ({{ state.metric_direction }})
+                    Target: {{ state.target }}
                     {% else %}No training has been run yet.{% endif %}
                 </p>
                 {% if state.reliability and state.reliability.warnings %}
@@ -282,39 +285,35 @@
                 <p class="stat-value">{% if state.best_model %}{{ state.best_model.model }}{% else %}&mdash;{% endif %}</p>
                 <p class="stat-meta">
                     {% if state.best_model %}
-                    status: <span class="badge badge-ok">{{ state.best_model.status }}</span><br>
-                    run <code>{{ state.best_model.run_id }}</code>
-                    {% if state.active_model and state.active_model.registry_version %}<br>registry v{{ state.active_model.registry_version }}{% endif %}
+                    <span class="badge badge-ok">Ready</span>
                     {% else %}No model selected yet.{% endif %}
                 </p>
             </div>
             <div class="card">
-                <span class="stat-label">Key metrics ({{ state.primary_metric if state.primary_metric else "validation" }})</span>
+                <span class="stat-label">Key metrics</span>
                 {% if state.best_model and state.best_model.metrics %}
-                    <p class="stat-value">{% if state.best_model.primary is not none %}{{ state.best_model.primary|round(4) }}{% else %}&mdash;{% endif %} <span style="font-size:.8rem;color:var(--ink-faint)">{{ state.primary_metric }}</span></p>
-                    <p class="stat-meta">
-                    {% for key, value in state.best_model.metrics.items() %}
-                        {{ key }}: {% if value is none %}&mdash;{% else %}{{ value|round(4) }}{% endif %}{{ "" if loop.last else " &middot; " }}
-                    {% endfor %}
-                    </p>
+                    <p class="stat-value">{{ state.primary_metric }}: {% if state.best_model.primary is not none %}{{ state.best_model.primary|round(4) }}{% else %}&mdash;{% endif %}</p>
+                    <ul class="metric-list">
+                        {% set metric_names = ["Accuracy", "Precision", "Recall", "F1"] if state.task_type == "classification" else ["MAE", "RMSE", "R2"] %}
+                        {% for key in metric_names if key in state.best_model.metrics and state.best_model.metrics[key] is not none %}
+                        <li>{{ key }} <strong>{{ state.best_model.metrics[key]|round(4) }}</strong></li>
+                        {% endfor %}
+                    </ul>
                 {% else %}
-                    <p class="stat-meta">Train a model to see real evaluation metrics.</p>
+                    <p class="stat-meta">&mdash;</p>
                 {% endif %}
             </div>
         </div>
     </section>
 
-    <!-- ============ 2. DATASET MANAGEMENT ============ -->
     <section id="dataset" aria-labelledby="dataset-title" style="margin-top:1.6rem;">
-        <h2 class="section-title" id="dataset-title">1. Dataset management</h2>
-        <p class="section-sub">Upload a UTF-8 CSV (max 10 MiB). The server validates structure, profiles columns, and stores the file securely.</p>
+        <h2 class="section-title" id="dataset-title">Dataset</h2>
 
         <div class="card">
             <h3>Upload dataset</h3>
             <form id="uploadForm" novalidate>
-                <label for="csvFile">CSV file</label>
+                <label for="csvFile">Choose a dataset</label>
                 <input type="file" id="csvFile" accept=".csv,text/csv" required>
-                <div class="field-hint">Only .csv files are accepted. Headers must be unique and rows consistent.</div>
                 <div class="progress" id="uploadProgress" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div class="progress-bar" id="uploadProgressBar"></div>
                 </div>
@@ -328,12 +327,26 @@
             <div id="datasetMessages" aria-live="polite"></div>
             <div id="preview"></div>
         </div>
+        <div class="card" id="datasetCharts">
+            <h3>Dataset visual analysis</h3>
+            <div class="field-grid chart-controls">
+                <div>
+                    <label for="chartFeature">Feature</label>
+                    <select id="chartFeature"></select>
+                </div>
+            </div>
+            <div class="chart-grid">
+                <article class="chart-card" id="chart-target" hidden><h4>Target distribution</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-missing" hidden><h4>Missing values by column</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-feature" hidden><h4>Feature distribution and outliers</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-correlation" hidden><h4>Feature correlation</h4><div class="chart-body"></div></article>
+            </div>
+            <div id="chartMessages" aria-live="polite"></div>
+        </div>
     </section>
 
-    <!-- ============ 3. MODEL TRAINING ============ -->
     <section id="training" aria-labelledby="training-title" style="margin-top:1.6rem;">
-        <h2 class="section-title" id="training-title">2. Model training</h2>
-        <p class="section-sub">Train a baseline, a linear model, and a Random Forest on an 80/20 train/validation split; the best candidate is selected automatically.</p>
+        <h2 class="section-title" id="training-title">Training</h2>
 
         {% if state.dataset_path %}
         <div class="card">
@@ -344,25 +357,19 @@
                         <label for="target">Target column</label>
                         <select name="target" id="target" required>
                             {% for col in state.columns %}
-                            <option value="{{ col.name }}">{{ col.name }} ({{ col.type }})</option>
+                            <option value="{{ col.name }}"{% if state.target == col.name %} selected{% endif %}>{{ col.name }} ({{ col.type }})</option>
                             {% endfor %}
                         </select>
-                        <div class="field-hint">Populated from the uploaded dataset columns.</div>
                     </div>
                     <div>
                         <label for="task_type">Task type</label>
                         <select name="task_type" id="task_type">
-                            <option value="classification">Classification</option>
-                            <option value="regression">Regression</option>
+                            <option value="classification"{% if state.task_type == "classification" or not state.task_type %} selected{% endif %}>Classification</option>
+                            <option value="regression"{% if state.task_type == "regression" %} selected{% endif %}>Regression</option>
                         </select>
-                        <div class="field-hint">Classification selects by F1 (maximize); regression by RMSE (minimize).</div>
                     </div>
                 </div>
-                <p class="field-hint" style="margin-top:.7rem;">
-                    Fixed pipeline configuration: 80/20 stratified split (classification only) &middot; random seed 42 &middot; median imputation + scaling for linear models &middot; one-hot encoding with unknown-category handling.
-                </p>
                 <button type="submit" class="btn" id="trainButton">Train models</button>
-                <span id="trainElapsed" class="badge badge-neutral" hidden>0s</span>
             </form>
             <div id="trainMessages" aria-live="polite"></div>
         </div>
@@ -387,53 +394,35 @@
                 {% endif %}
                 <div class="table-scroll">
                     <table>
-                        <caption class="field-hint" style="text-align:left;margin-bottom:.3rem;">
-                            Run group {{ state.run_group }}{% if state.primary_metric %} &middot; primary metric {{ state.primary_metric }} ({{ state.metric_direction }}){% endif %}
-                        </caption>
                         <thead>
                             <tr>
-                                <th scope="col">Candidate</th>
-                                <th scope="col">Status</th>
+                                <th scope="col">Algorithm</th>
                                 <th scope="col">Primary score</th>
                                 <th scope="col">Validation metrics</th>
-                                <th scope="col">Run ID</th>
+                                <th scope="col">Selection</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for res in state.results %}
                             <tr class="{% if res.run_id == state.best_model.run_id %}row-highlight{% elif res.status == 'failed' %}row-failed{% endif %}">
-                                <td>
+                                <td class="table-algorithm">
                                     <strong>{{ res.model }}</strong>
-                                    {% if res.run_id == state.best_model.run_id %}<span class="badge badge-ok">selected</span>{% endif %}<br>
-                                    <span class="field-hint">{{ res.role|default("candidate") }}{% if res.hyperparameters %} &middot; {{ res.hyperparameters }}{% endif %}</span>
                                     {% if res.status == 'failed' and res.error %}
-                                        <div class="error-note">{{ res.error.type }}: {{ res.error.message }}</div>
+                                        <div class="error-note">{{ res.error.message }}</div>
                                     {% endif %}
                                 </td>
+                                <td class="table-score">{% if res.status == 'success' and res.primary is not none %}{{ state.primary_metric }} {{ res.primary|round(4) }}{% else %}&mdash;{% endif %}</td>
                                 <td>
                                     {% if res.status == 'success' %}
-                                    <span class="badge badge-finished">SUCCESS</span>
-                                    {% else %}
-                                    <span class="badge badge-failed">FAILED</span>
-                                    {% endif %}
-                                </td>
-                                <td>{% if res.status == 'success' and res.primary is not none %}{{ res.primary|round(4) }}{% else %}&mdash;{% endif %}</td>
-                                <td>
-                                    {% if res.status == 'success' %}
-                                        {% for key, value in res.metrics.items() %}
-                                        <div>{{ key }}: {% if value is none %}&mdash;{% else %}{{ value|round(4) }}{% endif %}</div>
+                                        {% set metric_names = ["Accuracy", "Precision", "Recall", "F1"] if state.task_type == "classification" else ["MAE", "RMSE", "R2"] %}
+                                        {% for key in metric_names if key in res.metrics and res.metrics[key] is not none %}
+                                        <div>{{ key }} <strong>{{ res.metrics[key]|round(4) }}</strong></div>
                                         {% endfor %}
-                                        {% if res.confusion_matrix %}
-                                        <details class="matrix">
-                                            <summary>Confusion matrix ({{ res.confusion_matrix.labels|join(", ") }})</summary>
-                                            <pre>{{ res.confusion_matrix.matrix }}</pre>
-                                        </details>
-                                        {% endif %}
                                     {% else %}
                                         &mdash;
                                     {% endif %}
                                 </td>
-                                <td><code>{{ res.run_id }}</code></td>
+                                <td>{% if res.run_id == state.best_model.run_id %}<span class="badge badge-ok">Best</span>{% elif res.status == "failed" %}<span class="badge badge-failed">Failed</span>{% else %}&mdash;{% endif %}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -443,23 +432,78 @@
                 <div class="empty">No evaluated models yet. Run training to generate real results.</div>
             {% endif %}
         </div>
-    </section>
-
-    <!-- ============ 4. EXPERIMENTS ============ -->
-    <section id="experiments" aria-labelledby="experiments-title" style="margin-top:1.6rem;">
-        <h2 class="section-title" id="experiments-title">3. Experiments</h2>
-        <p class="section-sub">Runs recorded in the MLflow tracking store by AutoFlow training. Refresh after a new training run.</p>
-        <div class="card">
-            <button type="button" class="btn btn-secondary" id="refreshExperiments">&Applications; Refresh experiments</button>
-            <div id="experimentMessages" aria-live="polite"></div>
-            <div id="experimentResults" style="margin-top:.8rem;"></div>
+        <div class="card" id="task1Charts" hidden>
+            <h3>Model performance</h3>
+            <div class="field-grid chart-controls" id="taskChartControls" hidden>
+                <div>
+                    <label for="visualModelSelector">Model details</label>
+                    <select id="visualModelSelector"></select>
+                </div>
+                <div>
+                    <label for="regressionMetricSelector">Metric</label>
+                    <select id="regressionMetricSelector"></select>
+                </div>
+            </div>
+            <div class="chart-grid">
+                <article class="chart-card" id="chart-model-metrics" hidden><h4>Metric comparison</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-model-time" hidden><h4>Training time</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-cv" hidden><h4>Cross-validation stability</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-confusion" hidden><h4>Confusion matrix</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-roc" hidden><h4>ROC curves</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-regression-actual" hidden><h4>Actual vs predicted</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-regression-residual" hidden><h4>Residual analysis</h4><div class="chart-body"></div></article>
+            </div>
         </div>
     </section>
 
-    <!-- ============ 5. PREDICTIONS ============ -->
+    <section id="meta-learning" aria-labelledby="meta-learning-title">
+        <h2 class="section-title" id="meta-learning-title">Meta-Learning</h2>
+        {% if state.task_2 %}
+        <div class="grid pipeline-grid">
+            <div class="card">
+                <h3>Task 1 · Benchmark</h3>
+                <div class="stat-value">{{ state.best_model.model }}</div>
+                <div class="stat-meta">{{ state.primary_metric }} <strong>{{ state.best_model.primary|round(4) }}</strong></div>
+                {% if state.best_model.run_id %}
+                <a class="btn btn-secondary" href="/api/models/{{ state.best_model.run_id }}/download">Download pipeline</a>
+                {% endif %}
+            </div>
+            <div class="card">
+                <h3>Task 2 · Meta-Learning</h3>
+                <div class="stat-value">{{ state.task_2.predicted_algorithm }}</div>
+                <div class="stat-meta">{{ state.primary_metric }} <strong>{% if state.task_2.primary is not none %}{{ state.task_2.primary|round(4) }}{% else %}&mdash;{% endif %}</strong></div>
+                {% if state.task_2.run_id and state.task_2.status == "success" %}
+                <a class="btn btn-secondary" href="/api/models/{{ state.task_2.run_id }}/download">Download pipeline</a>
+                {% elif state.task_2.status == "failed" %}
+                <div class="error-note">This model could not be trained.</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        <div class="card" id="metaCharts" hidden>
+            <h3>Meta-Learning insights</h3>
+            <div class="chart-grid">
+                <article class="chart-card" id="chart-meta-importance" hidden><h4>Meta-feature importance</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-meta-frequency" hidden><h4>Historical algorithm winners</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-meta-probability" hidden><h4>Selection probabilities</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-meta-reliability" hidden><h4>Meta-Learning reliability</h4><div class="chart-body"></div></article>
+            </div>
+        </div>
+    </section>
+
+    <section id="task-comparison" aria-labelledby="task-comparison-title">
+        <h2 class="section-title" id="task-comparison-title">Task Comparison</h2>
+        <div class="card" id="comparisonCharts" hidden>
+            <div class="chart-grid">
+                <article class="chart-card" id="chart-comparison-metric" hidden><h4>Primary metric</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-comparison-time" hidden><h4>Execution time</h4><div class="chart-body"></div></article>
+                <article class="chart-card" id="chart-performance-gap" hidden><h4>Performance gap</h4><div class="chart-body"></div></article>
+            </div>
+        </div>
+    </section>
+
     <section id="predictions" aria-labelledby="predictions-title" style="margin-top:1.6rem;">
-        <h2 class="section-title" id="predictions-title">4. Predictions</h2>
-        <p class="section-sub">Inputs are generated from the active model's trained feature contract; preprocessing matches training exactly.</p>
+        <h2 class="section-title" id="predictions-title">Predictions</h2>
         {% if state.best_model or state.active_model %}
         <div class="card">
             <h3>Active model</h3>
@@ -468,11 +512,16 @@
                 <strong>{{ state.best_model.model }}</strong>
                 {% endif %}
                 {% if state.task_type %} &middot; {{ state.task_type }}{% endif %}
-                {% if state.best_model and state.best_model.run_id %} &middot; run <code>{{ state.best_model.run_id }}</code>{% endif %}
-                {% if state.active_model and state.active_model.registry_version %} &middot; registry v{{ state.active_model.registry_version }}{% endif %}
             </p>
             <div id="schemaMessages" aria-live="polite"></div>
             <form id="predictForm" novalidate>
+                {% if state.task_2 and state.task_2.status == "success" %}
+                <label for="predictionModel">Saved model</label>
+                <select id="predictionModel" name="model_run_id">
+                    <option value="{{ state.best_model.run_id }}">Task 1 - {{ state.best_model.model }}</option>
+                    <option value="{{ state.task_2.run_id }}">Task 2 - {{ state.task_2.predicted_algorithm }}</option>
+                </select>
+                {% endif %}
                 <div class="field-grid" id="predictFields"></div>
                 <button type="submit" class="btn" id="predictButton" style="margin-top:.9rem;">Predict</button>
             </form>
@@ -486,9 +535,6 @@
         {% endif %}
     </section>
 
-    <footer class="help">
-        AutoFlow AI &middot; FastAPI + scikit-learn + MLflow. All numbers are computed by the backend from real datasets and runs.
-    </footer>
 </main>
 
 <script>
@@ -579,30 +625,6 @@ function formatNumber(value) {
     return value.toFixed(4).replace(/\.?0+$/, "") || "0";
 }
 
-function formatTimestamp(millis) {
-    if (!millis) {
-        return "\u2014";
-    }
-    try {
-        return new Date(millis).toLocaleString();
-    } catch (error) {
-        return String(millis);
-    }
-}
-
-function badgeHTML(status) {
-    var text = String(status || "UNKNOWN").toUpperCase();
-    var map = {
-        "FINISHED": "badge-finished",
-        "FAILED": "badge-failed",
-        "RUNNING": "badge-running",
-        "SCHEDULED": "badge-running",
-        "KILLED": "badge-failed"
-    };
-    return '<span class="badge ' + (map[text] || "badge-neutral") + '">' + text + "</span>";
-}
-
-/* ---------------- Dataset upload (with progress) ---------------- */
 
 function handleUploadSubmit(event) {
     event.preventDefault();
@@ -667,7 +689,6 @@ function handleUploadSubmit(event) {
 
 document.getElementById("uploadForm").addEventListener("submit", handleUploadSubmit);
 
-/* ---------------- Dataset preview ---------------- */
 
 function renderDatasetPreview(data) {
     var container = document.getElementById("preview");
@@ -677,6 +698,22 @@ function renderDatasetPreview(data) {
     summary.className = "field-hint";
     summary.textContent = "Showing " + data.preview_rows + " of " + data.shape.rows + " rows (" + data.shape.columns + " columns).";
     container.appendChild(summary);
+    if (data.quality_warnings && data.quality_warnings.length) {
+        var warning = document.createElement("div");
+        warning.className = "notice notice-warn";
+        var warningTitle = document.createElement("strong");
+        warningTitle.textContent = "Dataset quality warnings (no data was removed)";
+        warning.appendChild(warningTitle);
+        var warningList = document.createElement("ul");
+        warningList.style.margin = ".3rem 0 0 1rem";
+        data.quality_warnings.forEach(function (message) {
+            var item = document.createElement("li");
+            item.textContent = message;
+            warningList.appendChild(item);
+        });
+        warning.appendChild(warningList);
+        container.appendChild(warning);
+    }
 
     var scroll = document.createElement("div");
     scroll.className = "table-scroll";
@@ -724,7 +761,7 @@ function renderDatasetPreview(data) {
     var metaTable = document.createElement("table");
     var metaHead = document.createElement("thead");
     var metaHeaderRow = document.createElement("tr");
-    ["Column", "Inferred type", "Data type", "Missing values", "Missing %"].forEach(function (heading) {
+    ["Column", "Type", "Missing values"].forEach(function (heading) {
         var th = document.createElement("th");
         th.scope = "col";
         th.textContent = heading;
@@ -735,7 +772,11 @@ function renderDatasetPreview(data) {
     var metaBody = document.createElement("tbody");
     data.columns.forEach(function (column) {
         var row = document.createElement("tr");
-        [column.name, column.kind, column.dtype, String(column.missing), column.missing_percentage + "%"].forEach(function (text, index) {
+        [
+            column.name,
+            column.kind,
+            String(column.missing)
+        ].forEach(function (text, index) {
             var cell = document.createElement("td");
             cell.textContent = text;
             if (index === 0) {
@@ -773,14 +814,12 @@ if (HAS_DATASET) {
     document.getElementById("preview").appendChild(emptyPreview);
 }
 
-/* ---------------- Training ---------------- */
 
 function handleTrainSubmit(event) {
     event.preventDefault();
     var form = document.getElementById("trainForm");
     var button = document.getElementById("trainButton");
     var messages = document.getElementById("trainMessages");
-    var elapsed = document.getElementById("trainElapsed");
     var formData = new FormData(form);
 
     clearNotice(messages);
@@ -790,22 +829,11 @@ function handleTrainSubmit(event) {
     }
 
     setBusy(button, true);
-    if (elapsed) {
-        elapsed.hidden = false;
-    }
-    var startedAt = Date.now();
-    var timer = window.setInterval(function () {
-        elapsed.textContent = Math.round((Date.now() - startedAt) / 1000) + "s";
-    }, 1000);
-    setNotice(messages, "neutral", "Training baseline, linear and forest candidates on an 80/20 validation split. This page reloads when finished.");
+    setNotice(messages, "neutral", "Training models…");
 
     fetchJSON("/train", { method: "POST", body: formData })
         .then(function (result) {
-            window.clearInterval(timer);
             setBusy(button, false);
-            if (elapsed) {
-                elapsed.hidden = true;
-            }
             if (result.ok) {
                 setNotice(messages, "ok", "Training finished. Reloading with the new comparison...");
                 window.location.reload();
@@ -814,9 +842,8 @@ function handleTrainSubmit(event) {
             }
         })
         .catch(function () {
-            window.clearInterval(timer);
             setBusy(button, false);
-            setNotice(messages, "error", "Network error during training. Check the server logs and retry.");
+            setNotice(messages, "error", "Network error during training. Please retry.");
         });
 }
 
@@ -824,130 +851,29 @@ var trainForm = document.getElementById("trainForm");
 if (trainForm) {
     trainForm.addEventListener("submit", handleTrainSubmit);
 }
-
-/* ---------------- Experiments ---------------- */
-
-function renderExperiments(data) {
-    var container = document.getElementById("experimentResults");
-    container.innerHTML = "";
-
-    if (!data.runs || data.runs.length === 0) {
-        var empty = document.createElement("div");
-        empty.className = "empty";
-        empty.textContent = "No MLflow runs recorded yet. Train a model to create real experiment records.";
-        container.appendChild(empty);
-        return;
-    }
-
-    var header = document.createElement("p");
-    header.className = "field-hint";
-    header.textContent = "Showing the " + data.count + " most recent AutoFlow run(s) from " + data.experiments + " experiment(s).";
-    container.appendChild(header);
-
-    var scroll = document.createElement("div");
-    scroll.className = "table-scroll";
-    var table = document.createElement("table");
-    var thead = document.createElement("thead");
-    var headerRow = document.createElement("tr");
-    ["Experiment", "Run (model)", "Status", "Started", "Primary metric", "Run ID"].forEach(function (heading) {
-        var th = document.createElement("th");
-        th.scope = "col";
-        th.textContent = heading;
-        headerRow.appendChild(th);
+var targetSelector = document.getElementById("target");
+var taskTypeSelector = document.getElementById("task_type");
+if (targetSelector && taskTypeSelector) {
+    targetSelector.addEventListener("change", function () {
+        fetchJSON("/api/problem-detection?target=" + encodeURIComponent(targetSelector.value))
+            .then(function (result) {
+                if (result.ok && result.data && result.data.detected) {
+                    taskTypeSelector.value = result.data.detected;
+                    scheduleVisualizations();
+                } else {
+                    setNotice(
+                        document.getElementById("trainMessages"),
+                        "error",
+                        errorMessageFromPayload(result.data, "Problem type could not be detected.")
+                    );
+                }
+            })
+            .catch(function () {
+                setNotice(document.getElementById("trainMessages"), "error", "Problem type detection failed.");
+            });
     });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    var tbody = document.createElement("tbody");
-    data.runs.forEach(function (run) {
-        var row = document.createElement("tr");
-        if (run.status === "FAILED") {
-            row.className = "row-failed";
-        }
-
-        var experimentCell = document.createElement("td");
-        experimentCell.textContent = run.experiment;
-        row.appendChild(experimentCell);
-
-        var runCell = document.createElement("td");
-        var runName = document.createElement("strong");
-        runName.textContent = run.run_name || "";
-        runCell.appendChild(runName);
-        if (!run.run_name) {
-            var unnamed = document.createElement("em");
-            unnamed.textContent = "unnamed run";
-            runCell.appendChild(unnamed);
-        }
-        if (run.task_type) {
-            var kind = document.createElement("div");
-            kind.className = "field-hint";
-            kind.textContent = run.task_type;
-            runCell.appendChild(kind);
-        }
-        if (run.error) {
-            var errorLine = document.createElement("div");
-            errorLine.className = "error-note";
-            errorLine.textContent = run.error;
-            errorLine.title = "Run error";
-            runCell.appendChild(errorLine);
-        }
-        row.appendChild(runCell);
-
-        var statusCell = document.createElement("td");
-        statusCell.innerHTML = badgeHTML(run.status);
-        row.appendChild(statusCell);
-
-        var startedCell = document.createElement("td");
-        startedCell.textContent = formatTimestamp(run.start_time);
-        row.appendChild(startedCell);
-
-        var metricCell = document.createElement("td");
-        if (run.primary_metric) {
-            metricCell.textContent = run.primary_metric + ": " + formatNumber(run.primary_value);
-        } else {
-            metricCell.textContent = "\u2014";
-        }
-        row.appendChild(metricCell);
-
-        var runIdCell = document.createElement("td");
-        var runIdCode = document.createElement("code");
-        runIdCode.textContent = run.run_id;
-        runIdCell.appendChild(runIdCode);
-        row.appendChild(runIdCell);
-
-        tbody.appendChild(row);
-    });
-
-    table.appendChild(tbody);
-    scroll.appendChild(table);
-    container.appendChild(scroll);
 }
 
-var experimentMessages = document.getElementById("experimentMessages");
-
-function loadExperiments() {
-    var button = document.getElementById("refreshExperiments");
-    setBusy(button, true);
-    clearNotice(experimentMessages);
-    fetchJSON("/api/experiments?limit=25")
-        .then(function (result) {
-            setBusy(button, false);
-            if (result.ok) {
-                renderExperiments(result.data);
-            } else {
-                setNotice(experimentMessages, "error", errorMessageFromPayload(result.data, "Experiment history could not be loaded (HTTP " + result.status + ")."));
-            }
-        })
-        .catch(function () {
-            setBusy(button, false);
-            setNotice(experimentMessages, "error", "Network error while loading experiment history.");
-        });
-}
-
-document.getElementById("refreshExperiments").addEventListener("click", loadExperiments);
-loadExperiments();
-
-/* ---------------- Predictions ---------------- */
 
 var schemaMessages = document.getElementById("schemaMessages");
 var predictFields = document.getElementById("predictFields");
@@ -996,8 +922,6 @@ function validateNumericInput(input, sendNull) {
     return null;
 }
 
-// Empty strings are valid categorical values on the backend (one-hot encoding
-// treats them like any other category), so no additional validation is applied.
 function validateCategoricalInput(input) {
     return null;
 }
@@ -1005,8 +929,6 @@ function validateCategoricalInput(input) {
 function buildPredictFields(features) {
     predictFields.innerHTML = "";
     features.forEach(function (feature, index) {
-        // Index-based identifier keeps the markup valid even when feature
-        // names contain spaces or quotes.
         var fieldId = "feature-" + index;
 
         var wrapper = document.createElement("div");
@@ -1031,13 +953,6 @@ function buildPredictFields(features) {
         }
         wrapper.appendChild(input);
 
-        var hint = document.createElement("div");
-        hint.className = "field-hint";
-        hint.textContent = isNumeric
-            ? "numeric" + (feature.kind ? "" : " (type not specified)")
-            : "categorical";
-        wrapper.appendChild(hint);
-
         var toggleWrap = document.createElement("label");
         toggleWrap.className = "missing-toggle";
         var toggle = document.createElement("input");
@@ -1045,7 +960,7 @@ function buildPredictFields(features) {
         toggle.dataset.featureName = feature.name;
         toggle.className = "missing-toggle-box";
         toggleWrap.appendChild(toggle);
-        toggleWrap.appendChild(document.createTextNode("mark as missing (null)"));
+        toggleWrap.appendChild(document.createTextNode("Treat as missing"));
         wrapper.appendChild(toggleWrap);
 
         predictFields.appendChild(wrapper);
@@ -1062,8 +977,6 @@ function collectPredictionPayload() {
 
     predictFields.querySelectorAll("div[data-feature-name]").forEach(function (wrapper) {
         var name = wrapper.dataset.featureName;
-        // querySelector returns the first input in DOM order: the feature
-        // input (the "mark as missing" checkbox is appended afterwards).
         var input = wrapper.querySelector("input");
 
         var sendNull = toggles[name] === true;
@@ -1105,8 +1018,6 @@ function showPredictionOutcome(response) {
     card.className = "notice notice-ok";
     if (typeof response.prediction !== "undefined") {
         card.textContent = "Prediction: " + String(response.prediction);
-        card.appendChild(document.createElement("br"));
-        card.appendChild(document.createTextNode("model run: " + response.model_version + ", registry v" + (response.registry_version === null ? "\u2014" : response.registry_version)));
     } else {
         card.textContent = "Prediction request completed: " + JSON.stringify(response);
     }
@@ -1125,7 +1036,12 @@ function handlePredictSubmit(event) {
     fetchJSON("/predict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ features: features })
+        body: JSON.stringify({
+            features: features,
+            model_run_id: document.getElementById("predictionModel")
+                ? document.getElementById("predictionModel").value
+                : undefined
+        })
     })
         .then(function (result) {
             setBusy(button, false);
@@ -1169,9 +1085,522 @@ if (HAS_MODEL) {
 } else if (predictFields) {
     var schemaEmpty = document.createElement("div");
     schemaEmpty.className = "empty";
-    schemaEmpty.textContent = "Train a model first; prediction inputs are generated from its real feature contract.";
+    schemaEmpty.textContent = "Train a model to make predictions.";
     predictFields.appendChild(schemaEmpty);
 }
+
+
+var chartColors = ["#1479b8", "#e58b25", "#32845a", "#8d62a9", "#d34b4b", "#37a3a3", "#667085"];
+function chartSvg(container, height, append, width) {
+    if (!append) { container.innerHTML = ""; }
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 " + (width || 680) + " " + (height || 300));
+    svg.setAttribute("role", "img");
+    container.appendChild(svg);
+    return svg;
+}
+function svgElement(svg, name, attrs, text) {
+    var node = document.createElementNS("http://www.w3.org/2000/svg", name);
+    Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+    if (text !== undefined) { node.textContent = String(text); }
+    svg.appendChild(node);
+    return node;
+}
+function syncChartSections() {
+    document.querySelectorAll(".chart-grid").forEach(function (grid) {
+        var cards = Array.prototype.slice.call(grid.querySelectorAll(".chart-card"));
+        var hasCharts = cards.some(function (card) { return !card.hidden; });
+        grid.hidden = !hasCharts;
+        var parent = grid.parentElement;
+        if (parent && ["task1Charts", "metaCharts", "comparisonCharts"].indexOf(parent.id) >= 0) {
+            parent.hidden = !hasCharts;
+        }
+    });
+    var metaSection = document.getElementById("meta-learning");
+    var pipelineCards = metaSection.querySelector(".pipeline-grid");
+    metaSection.hidden = !(pipelineCards || !document.getElementById("metaCharts").hidden);
+    document.getElementById("task-comparison").hidden =
+        document.getElementById("comparisonCharts").hidden;
+}
+function chartEmpty(id) {
+    var card = document.getElementById(id);
+    if (!card) { return; }
+    card.hidden = true;
+    card.classList.remove("chart-wide");
+    card.querySelector(".chart-body").innerHTML = "";
+    syncChartSections();
+}
+function chartErrorAll(message) {
+    document.querySelectorAll(".chart-card").forEach(function (card) {
+        chartEmpty(card.id);
+    });
+    setNotice(document.getElementById("chartMessages"), "error", message);
+}
+function renderBars(id, data, options) {
+    options = options || {};
+    var valid = (data || []).filter(function (item) {
+        return item.value !== null && item.value !== undefined && item.value !== "" &&
+            Number.isFinite(Number(item.value));
+    });
+    if (!valid.length) { chartEmpty(id); return; }
+    var card = document.getElementById(id);
+    card.hidden = false;
+    card.classList.toggle("chart-wide", Boolean(options.horizontal));
+    syncChartSections();
+    var body = card.querySelector(".chart-body");
+    var width = options.horizontal ? 780 : 680;
+    var height = options.horizontal ? Math.max(180, valid.length * 34 + 48) : options.height || 290;
+    var left = options.horizontal ? 190 : 54;
+    var right = options.horizontal ? 66 : 18;
+    var top = options.horizontal ? 24 : 14;
+    var bottom = options.horizontal ? 24 : 68;
+    var svg = chartSvg(body, height, false, width);
+    var plotWidth = width - left - right, plotHeight = height - top - bottom;
+    var values = valid.map(function (item) {
+        var value = Number(item.value), error = Number(item.error || 0);
+        return options.horizontal ? [value - error, value + error] : [value];
+    }).reduce(function (all, pair) { return all.concat(pair); }, []);
+    var min = options.min !== undefined ? options.min : Math.min(0, Math.min.apply(null, values));
+    var max = options.max !== undefined ? options.max : Math.max(0, Math.max.apply(null, values));
+    if (max === min) { max = min + 1; }
+    if (options.horizontal) {
+        var x = function (value) { return left + (value - min) / (max - min) * plotWidth; };
+        var zeroX = x(Math.max(min, Math.min(max, 0)));
+        svgElement(svg, "line", { x1: zeroX, y1: top - 4, x2: zeroX, y2: height - bottom, class: "chart-axis" });
+        svgElement(svg, "text", { x: left, y: 15, class: "chart-label" }, options.axis || "");
+        valid.forEach(function (item, index) {
+            var value = Number(item.value), rowHeight = plotHeight / valid.length;
+            var barY = top + rowHeight * index + rowHeight * .2;
+            var barHeight = Math.max(8, rowHeight * .6);
+            var valueX = x(value);
+            var rect = svgElement(svg, "rect", {
+                x: Math.min(zeroX, valueX), y: barY, width: Math.max(1, Math.abs(valueX - zeroX)),
+                height: barHeight, rx: 3, fill: item.color || chartColors[index % chartColors.length],
+                class: "chart-mark"
+            });
+            svgElement(rect, "title", {}, String(item.label) + ": " + formatNumber(value) + (options.unit || ""));
+            var label = String(item.label);
+            var labelNode = svgElement(svg, "text", {
+                x: left - 12, y: barY + barHeight / 2 + 4, "text-anchor": "end",
+                class: "chart-label"
+            }, label.length > 25 ? label.slice(0, 23) + "…" : label);
+            svgElement(labelNode, "title", {}, label);
+            if (item.error !== undefined && Number(item.error) > 0) {
+                var error = Number(item.error);
+                var low = x(value - error), high = x(value + error), center = barY + barHeight / 2;
+                svgElement(svg, "line", { x1: low, x2: high, y1: center, y2: center, stroke: "#102a43", "stroke-width": 2 });
+                svgElement(svg, "line", { x1: low, x2: low, y1: center - 5, y2: center + 5, stroke: "#102a43", "stroke-width": 2 });
+                svgElement(svg, "line", { x1: high, x2: high, y1: center - 5, y2: center + 5, stroke: "#102a43", "stroke-width": 2 });
+            }
+            var valueText = formatNumber(value) + (options.unit || "");
+            var valueXLabel = value >= 0 ? Math.min(width - 4, valueX + 8) : Math.max(left + 2, valueX - 8);
+            svgElement(svg, "text", {
+                x: valueXLabel, y: barY + barHeight / 2 + 4,
+                "text-anchor": value >= 0 ? "start" : "end", class: "chart-label"
+            }, valueText);
+        });
+        return;
+    }
+    var y = function (value) { return top + (max - value) / (max - min) * plotHeight; };
+    var zeroY = y(Math.max(min, Math.min(max, 0)));
+    svgElement(svg, "line", { x1: left, y1: zeroY, x2: width - right, y2: zeroY, class: "chart-axis" });
+    svgElement(svg, "line", { x1: left, y1: top, x2: left, y2: height - bottom, class: "chart-axis" });
+    var slot = plotWidth / valid.length, barWidth = Math.max(4, Math.min(48, slot * .64));
+    valid.forEach(function (item, index) {
+        var value = Number(item.value);
+        var barY = Math.min(y(value), zeroY);
+        var barH = Math.max(1, Math.abs(zeroY - y(value)));
+        var rect = svgElement(svg, "rect", {
+            x: left + slot * index + (slot - barWidth) / 2,
+            y: barY,
+            width: barWidth,
+            height: barH,
+            rx: 2,
+            fill: item.color || chartColors[index % chartColors.length],
+            class: "chart-mark"
+        });
+        svgElement(rect, "title", {}, String(item.label) + ": " + formatNumber(value) + (options.unit || ""));
+        var labelStep = Math.ceil(valid.length / 12);
+        if (valid.length < 14 || index % labelStep === 0) {
+            svgElement(svg, "text", {
+                x: left + slot * index + slot / 2,
+                y: height - bottom + 16,
+                "text-anchor": "middle",
+                class: "chart-label"
+            }, String(item.label).length > 15 ? String(item.label).slice(0, 13) + "…" : item.label);
+        }
+        if (valid.length < 14) {
+            svgElement(svg, "text", {
+                x: left + slot * index + slot / 2,
+                y: barY - 5,
+                "text-anchor": "middle",
+                class: "chart-label"
+            }, formatNumber(value));
+        }
+    });
+    svgElement(svg, "text", { x: 8, y: 17, class: "chart-label" }, options.axis || "");
+    svgElement(svg, "text", { x: width / 2, y: height - 8, "text-anchor": "middle", class: "chart-label" }, options.xAxis || "");
+}
+function renderLineChart(id, curves, xLabel, yLabel) {
+    if (!curves || !curves.length) { chartEmpty(id); return; }
+    var card = document.getElementById(id), body = card.querySelector(".chart-body");
+    card.hidden = false;
+    syncChartSections();
+    body.innerHTML = "";
+    var legend = document.createElement("div"); legend.className = "chart-legend";
+    curves.forEach(function (curve, index) {
+        var entry = document.createElement("span"), marker = document.createElement("i");
+        marker.style.background = chartColors[index % chartColors.length];
+        entry.appendChild(marker);
+        entry.appendChild(document.createTextNode(curve.label + " (AUC " + formatNumber(curve.auc) + ")"));
+        legend.appendChild(entry);
+    });
+    body.appendChild(legend);
+    var svg = chartSvg(body, 270), left = 52, top = 15, plotW = 590, plotH = 205;
+    for (var tick = 0; tick <= 4; tick++) {
+        var pos = tick / 4;
+        svgElement(svg, "line", { x1: left, y1: top + plotH * pos, x2: left + plotW, y2: top + plotH * pos, class: "chart-gridline" });
+        svgElement(svg, "line", { x1: left + plotW * pos, y1: top, x2: left + plotW * pos, y2: top + plotH, class: "chart-gridline" });
+    }
+    svgElement(svg, "line", { x1: left, y1: top + plotH, x2: left + plotW, y2: top, stroke: "#94a3b8", "stroke-dasharray": "5 4" });
+    curves.forEach(function (curve, index) {
+        var coords = curve.false_positive_rate.map(function (x, i) {
+            return (left + x * plotW) + "," + (top + plotH - curve.true_positive_rate[i] * plotH);
+        }).join(" ");
+        var line = svgElement(svg, "polyline", {
+            points: coords,
+            fill: "none",
+            stroke: chartColors[index % chartColors.length],
+            "stroke-width": 2
+        });
+        svgElement(line, "title", {}, curve.label + ": AUC " + formatNumber(curve.auc));
+    });
+    svgElement(svg, "text", { x: left + plotW / 2, y: 258, "text-anchor": "middle", class: "chart-label" }, xLabel);
+    svgElement(svg, "text", { x: 14, y: top + plotH / 2, transform: "rotate(-90 14 " + (top + plotH / 2) + ")", "text-anchor": "middle", class: "chart-label" }, yLabel);
+}
+function renderHeatmap(id, labels, matrix) {
+    if (!labels || !labels.length || !matrix || !matrix.length) { chartEmpty(id); return; }
+    var card = document.getElementById(id);
+    card.hidden = false;
+    syncChartSections();
+    var left = 170, right = 18, top = 22;
+    var cell = Math.min(54, (780 - left - right) / labels.length);
+    var height = Math.max(330, top + cell * labels.length + 75);
+    var svg = chartSvg(card.querySelector(".chart-body"), height, false, 780);
+    labels.forEach(function (row, i) {
+        svgElement(svg, "text", { x: left - 8, y: top + cell * i + cell / 2 + 4, "text-anchor": "end", class: "chart-label" }, row);
+        labels.forEach(function (col, j) {
+            var value = matrix[i][j];
+            var color = value !== null && value !== undefined && Number.isFinite(Number(value))
+                ? (Number(value) >= 0 ? "rgba(11,98,164," + Math.max(.08, Math.abs(value)) + ")" : "rgba(190,55,55," + Math.max(.08, Math.abs(value)) + ")")
+                : "#e2e8f0";
+            var rect = svgElement(svg, "rect", { x: left + cell * j, y: top + cell * i, width: cell - 2, height: cell - 2, rx: 2, fill: color });
+            svgElement(rect, "title", {}, row + " / " + col + ": " + (value == null ? "unavailable" : formatNumber(Number(value))));
+            if (cell >= 38) {
+                svgElement(svg, "text", { x: left + cell * j + cell / 2, y: top + cell * i + cell / 2 + 4, "text-anchor": "middle", class: "chart-label" }, value == null ? "—" : formatNumber(Number(value)));
+            }
+        });
+        svgElement(svg, "text", { x: left + cell * i + cell / 2, y: top + cell * labels.length + 14, transform: "rotate(35 " + (left + cell * i + cell / 2) + " " + (top + cell * labels.length + 14) + ")", "text-anchor": "start", class: "chart-label" }, row);
+    });
+}
+function renderScatter(id, points, mode) {
+    if (!points || !points.actual || !points.actual.length) { chartEmpty(id); return; }
+    var actual = points.actual.map(Number), predicted = points.predicted.map(Number);
+    if (!actual.every(Number.isFinite) || !predicted.every(Number.isFinite)) { chartEmpty(id); return; }
+    var card = document.getElementById(id);
+    card.hidden = false;
+    syncChartSections();
+    var min = Math.min.apply(null, actual.concat(predicted)), max = Math.max.apply(null, actual.concat(predicted));
+    if (min === max) { max = min + 1; }
+    var svg = chartSvg(card.querySelector(".chart-body"), 290);
+    var left = 54, top = 16, plotW = 590, plotH = 220;
+    var sx = function (v) { return left + (v - min) / (max - min) * plotW; };
+    var sy = function (v) { return top + plotH - (v - min) / (max - min) * plotH; };
+    svgElement(svg, "line", { x1: left, y1: top + plotH, x2: left + plotW, y2: top + plotH, class: "chart-axis" });
+    svgElement(svg, "line", { x1: left, y1: top, x2: left, y2: top + plotH, class: "chart-axis" });
+    if (mode === "actual") {
+        svgElement(svg, "line", { x1: sx(min), y1: sy(min), x2: sx(max), y2: sy(max), stroke: "#d34b4b", "stroke-dasharray": "5 4" });
+        actual.forEach(function (v, i) {
+            var point = svgElement(svg, "circle", { cx: sx(v), cy: sy(predicted[i]), r: 4, fill: chartColors[0], opacity: .7 });
+            svgElement(point, "title", {}, "Actual: " + formatNumber(v) + ", predicted: " + formatNumber(predicted[i]));
+        });
+        svgElement(svg, "text", { x: left + plotW / 2, y: 278, "text-anchor": "middle", class: "chart-label" }, "Actual");
+        svgElement(svg, "text", { x: 15, y: top + plotH / 2, transform: "rotate(-90 15 " + (top + plotH / 2) + ")", "text-anchor": "middle", class: "chart-label" }, "Predicted");
+    } else {
+        var residuals = actual.map(function (v, i) { return v - predicted[i]; });
+        var residualMax = Math.max.apply(null, residuals.map(Math.abs)) || 1;
+        var ry = function (v) { return top + plotH / 2 - v / residualMax * plotH / 2; };
+        svgElement(svg, "line", { x1: left, y1: ry(0), x2: left + plotW, y2: ry(0), stroke: "#d34b4b", "stroke-dasharray": "5 4" });
+        predicted.forEach(function (v, i) {
+            var point = svgElement(svg, "circle", { cx: sx(v), cy: ry(residuals[i]), r: 4, fill: chartColors[1], opacity: .7 });
+            svgElement(point, "title", {}, "Predicted: " + formatNumber(v) + ", residual: " + formatNumber(residuals[i]));
+        });
+        svgElement(svg, "text", { x: left + plotW / 2, y: 278, "text-anchor": "middle", class: "chart-label" }, "Predicted");
+        svgElement(svg, "text", { x: 15, y: top + plotH / 2, transform: "rotate(-90 15 " + (top + plotH / 2) + ")", "text-anchor": "middle", class: "chart-label" }, "Residual (actual − predicted)");
+    }
+}
+function renderFeatureChart(data) {
+    var id = "chart-feature";
+    if (!data || !data.available || !data.bins || !data.bins.length) { chartEmpty(id); return; }
+    var body = document.getElementById(id).querySelector(".chart-body");
+    var stats = data.statistics;
+    renderBars(id, data.bins.map(function (bin) {
+        return { label: formatNumber((bin.start + bin.end) / 2), value: bin.count };
+    }), { axis: "Records", xAxis: data.feature + " histogram bin", height: 230 });
+    body = document.getElementById(id).querySelector(".chart-body");
+    var boxSvg = chartSvg(body, 120, true), left = 55, right = 20, y = 52;
+    var scale = function (v) { return left + (v - stats.minimum) / ((stats.maximum - stats.minimum) || 1) * (680 - left - right); };
+    svgElement(boxSvg, "line", { x1: scale(data.boxplot.minimum), y1: y, x2: scale(data.boxplot.maximum), y2: y, stroke: "#64748b", "stroke-width": 2 });
+    svgElement(boxSvg, "line", { x1: scale(data.boxplot.minimum), y1: y - 10, x2: scale(data.boxplot.minimum), y2: y + 10, stroke: "#64748b" });
+    svgElement(boxSvg, "line", { x1: scale(data.boxplot.maximum), y1: y - 10, x2: scale(data.boxplot.maximum), y2: y + 10, stroke: "#64748b" });
+    svgElement(boxSvg, "rect", { x: scale(stats.q1), y: y - 16, width: Math.max(2, scale(stats.q3) - scale(stats.q1)), height: 32, fill: "#d8ebf8", stroke: "#1479b8" });
+    svgElement(boxSvg, "line", { x1: scale(stats.median), y1: y - 16, x2: scale(stats.median), y2: y + 16, stroke: "#084a7d", "stroke-width": 2 });
+    data.boxplot.outliers.forEach(function (outlier) {
+        svgElement(boxSvg, "circle", { cx: scale(outlier), cy: y, r: 3, fill: "#d34b4b" });
+    });
+    svgElement(boxSvg, "text", { x: 10, y: 100, class: "chart-label" }, "Outliers");
+}
+function renderTaskCharts(data, taskType, selectedMetric) {
+    var models = data.models || {};
+    var controls = document.getElementById("taskChartControls");
+    if (!models.available) {
+        controls.hidden = true;
+        ["chart-model-metrics", "chart-model-time", "chart-cv", "chart-confusion", "chart-roc", "chart-regression-actual", "chart-regression-residual"].forEach(function (id) {
+            chartEmpty(id);
+        });
+        return;
+    }
+    controls.hidden = false;
+    var metrics = models.metrics || {};
+    var metricNames = taskType === "classification"
+        ? ["Accuracy", "Precision", "Recall", "F1"]
+        : ["MAE", "RMSE", "R2"];
+    var metricControl = document.getElementById("regressionMetricSelector");
+    var previousMetric = metricControl.value;
+    metricControl.innerHTML = "";
+    metricNames.filter(function (name) {
+        return (metrics[name] || []).some(function (item) {
+            return item.value !== null && Number.isFinite(Number(item.value));
+        });
+    }).forEach(function (name) {
+        var option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        metricControl.appendChild(option);
+    });
+    var availableMetrics = Array.prototype.map.call(metricControl.options, function (option) { return option.value; });
+    selectedMetric = availableMetrics.indexOf(previousMetric) >= 0
+        ? previousMetric
+        : availableMetrics.indexOf(models.primary_metric) >= 0
+            ? models.primary_metric
+            : availableMetrics[0];
+    if (selectedMetric) { metricControl.value = selectedMetric; }
+    var metricHigherIsBetter = taskType === "classification" || selectedMetric === "R2";
+    renderBars("chart-model-metrics", (metrics[selectedMetric] || []).map(function (item) {
+        return { label: item.algorithm, value: item.value };
+    }), {
+        horizontal: true,
+        min: taskType === "classification" ? 0 : undefined,
+        max: taskType === "classification" ? 1 : undefined,
+        axis: selectedMetric + (metricHigherIsBetter ? " · higher is better" : " · lower is better")
+    });
+    renderBars("chart-model-time", (models.training_times || []).map(function (item) {
+        return { label: item.algorithm, value: item.seconds };
+    }), { horizontal: true, axis: "Seconds" });
+    var cv = (models.cross_validation || []).filter(function (item) {
+        return item.mean !== null && Number.isFinite(Number(item.mean));
+    });
+    renderBars("chart-cv", cv.map(function (item) {
+        return { label: item.algorithm, value: item.mean, error: item.std };
+    }), { horizontal: true, axis: "Mean " + (cv.length ? cv[0].metric : "") });
+    var selected = models.selected_model || {};
+    if (taskType === "classification") {
+        if (selected.confusion_matrix) {
+            renderHeatmap("chart-confusion", selected.confusion_matrix.labels, selected.confusion_matrix.matrix);
+        } else {
+            chartEmpty("chart-confusion");
+        }
+        var roc = selected.evaluation_data && selected.evaluation_data.roc_curves;
+        renderLineChart("chart-roc", roc, "False positive rate", "True positive rate");
+        chartEmpty("chart-regression-actual");
+        chartEmpty("chart-regression-residual");
+    } else {
+        chartEmpty("chart-confusion");
+        chartEmpty("chart-roc");
+        var evaluation = selected.evaluation_data && selected.evaluation_data.actual &&
+            selected.evaluation_data.predicted ? selected.evaluation_data : null;
+        renderScatter("chart-regression-actual", evaluation, "actual");
+        renderScatter("chart-regression-residual", evaluation, "residual");
+    }
+}
+function renderMetaCharts(meta) {
+    if (!meta || !meta.trained) {
+        chartEmpty("chart-meta-importance");
+        chartEmpty("chart-meta-probability");
+    } else {
+        renderBars("chart-meta-importance", (meta.feature_importance || []).map(function (item) {
+            return { label: item.feature, value: item.importance };
+        }), { axis: "Importance", horizontal: true });
+        renderBars("chart-meta-probability", (meta.probabilities || []).map(function (item) {
+            return { label: item.algorithm, value: item.probability };
+        }), { axis: "Selection probability", horizontal: true, min: 0, max: 1 });
+    }
+    renderBars("chart-meta-frequency", (meta && meta.historical_winner_frequency || []).map(function (item) {
+        return { label: item.algorithm, value: item.datasets };
+    }), { axis: "Historical wins", horizontal: true });
+    var reliability = meta && meta.reliability;
+    if (!reliability || !reliability.available) {
+        chartEmpty("chart-meta-reliability");
+    } else {
+        var body = document.getElementById("chart-meta-reliability").querySelector(".chart-body");
+        body.innerHTML = "";
+        var summary = document.createElement("p");
+        summary.className = "stat-value";
+        summary.textContent = "Accuracy " + formatNumber(reliability.accuracy) +
+            " · F1 " + formatNumber(reliability.macro_f1);
+        renderHeatmap("chart-meta-reliability", reliability.labels, reliability.confusion_matrix);
+        body = document.getElementById("chart-meta-reliability").querySelector(".chart-body");
+        body.insertBefore(summary, body.firstChild);
+    }
+}
+function renderComparisonCharts(comparison, taskType) {
+    if (!comparison) {
+        ["chart-comparison-metric", "chart-comparison-time", "chart-performance-gap"].forEach(chartEmpty);
+        return;
+    }
+    var metric = comparison.task_1_primary_metric;
+    var task1Metric = comparison.task_1_primary_value;
+    var task2Metric = comparison.task_2_primary_value;
+    if (task1Metric !== null && task2Metric !== null &&
+        Number.isFinite(Number(task1Metric)) && Number.isFinite(Number(task2Metric))) {
+        renderBars("chart-comparison-metric", [
+            { label: "Task 1 · Benchmark", value: task1Metric, color: chartColors[0] },
+            { label: "Task 2 · Meta-Learning", value: task2Metric, color: chartColors[1] }
+        ], {
+            horizontal: true,
+            min: taskType === "classification" ? 0 : undefined,
+            max: taskType === "classification" ? 1 : undefined,
+            axis: metric + (taskType === "regression" ? " · lower is better" : " · higher is better")
+        });
+    } else {
+        chartEmpty("chart-comparison-metric");
+    }
+    var timeItems = [
+        { label: "Task 1 · Benchmark", value: comparison.task_1_execution_time_seconds, color: chartColors[0] },
+        { label: "Task 2 · Meta-Learning", value: comparison.task_2_execution_time_seconds, color: chartColors[1] }
+    ].filter(function (item) {
+        return item.value !== null && item.value !== undefined && Number.isFinite(Number(item.value));
+    });
+    if (timeItems.length === 2) {
+        renderBars("chart-comparison-time", timeItems, { axis: "Seconds", horizontal: true, unit: " s" });
+    } else {
+        chartEmpty("chart-comparison-time");
+    }
+    var gap = comparison.performance_difference;
+    if (gap !== null && gap !== undefined && Number.isFinite(Number(gap))) {
+        renderBars("chart-performance-gap", [
+            { label: "Task 2 vs Task 1 (positive = worse)", value: gap, color: gap > 0 ? "#d34b4b" : "#32845a" }
+        ], { axis: metric, horizontal: true });
+    } else {
+        chartEmpty("chart-performance-gap");
+    }
+}
+
+var visualizationTimer;
+function loadVisualizations() {
+    if (!HAS_DATASET) { return; }
+    clearNotice(document.getElementById("chartMessages"));
+    document.querySelectorAll(".chart-card").forEach(function (card) {
+        chartEmpty(card.id);
+    });
+    var targetControl = document.getElementById("target");
+    var taskControl = document.getElementById("task_type");
+    var featureControl = document.getElementById("chartFeature");
+    var modelControl = document.getElementById("visualModelSelector");
+    var params = new URLSearchParams();
+    if (targetControl && targetControl.value) { params.set("target", targetControl.value); }
+    if (taskControl && taskControl.value) { params.set("task_type", taskControl.value); }
+    if (featureControl && featureControl.value) { params.set("feature", featureControl.value); }
+    if (modelControl && modelControl.value) { params.set("model_run_id", modelControl.value); }
+    fetchJSON("/api/visualizations?" + params.toString())
+        .then(function (result) {
+            if (!result.ok || !result.data) {
+                chartErrorAll(errorMessageFromPayload(result.data, "Visualization data could not be loaded."));
+                return;
+            }
+            var data = result.data;
+            var featureNames = data.dataset.feature_names || [];
+            var selectedFeature = data.dataset.selected_feature;
+            if (featureControl) {
+                var previous = featureControl.value;
+                featureControl.innerHTML = "";
+                featureNames.forEach(function (name) {
+                    var option = document.createElement("option");
+                    option.value = name;
+                    option.textContent = name;
+                    featureControl.appendChild(option);
+                });
+                if (featureNames.indexOf(previous) >= 0) { featureControl.value = previous; }
+                else if (selectedFeature) { featureControl.value = selectedFeature; }
+                featureControl.disabled = !featureNames.length;
+            }
+            if (modelControl) {
+                var previousModel = modelControl.value;
+                modelControl.innerHTML = "";
+                (data.models.available_models || []).forEach(function (model) {
+                    var option = document.createElement("option");
+                    option.value = model.run_id;
+                    option.textContent = (model.role === "task_2_meta_selection" ? "Task 2 — " : "Task 1 — ") + model.algorithm;
+                    modelControl.appendChild(option);
+                });
+                if ((data.models.available_models || []).some(function (model) { return model.run_id === previousModel; })) {
+                    modelControl.value = previousModel;
+                }
+                modelControl.disabled = !modelControl.options.length;
+            }
+            document.getElementById("taskChartControls").hidden = !data.models.available;
+            var dataset = data.dataset;
+            var target = dataset.target_distribution;
+            if (target.type === "classification") {
+                renderBars("chart-target", target.classes.map(function (item) {
+                    return { label: item.label, value: item.count };
+                }), { axis: "Records", horizontal: true });
+            } else if (target.type === "regression" && target.available) {
+                renderBars("chart-target", target.bins.map(function (item) {
+                    return { label: formatNumber((item.start + item.end) / 2), value: item.count };
+                }), { axis: "Records", xAxis: "Target value" });
+            } else {
+                chartEmpty("chart-target");
+            }
+            var missing = (dataset.missing_values || []).filter(function (item) { return item.count > 0; });
+            renderBars("chart-missing", missing.map(function (item) {
+                return { label: item.column, value: item.count };
+            }), { axis: "Missing records", horizontal: true });
+            renderFeatureChart(dataset.feature_distribution);
+            if (dataset.correlation.features.length > 1) {
+                renderHeatmap("chart-correlation", dataset.correlation.features, dataset.correlation.matrix);
+            } else {
+                chartEmpty("chart-correlation");
+            }
+            renderTaskCharts(data, data.task_type, document.getElementById("regressionMetricSelector").value);
+            renderMetaCharts(data.meta_learning);
+            renderComparisonCharts((data.models || {}).comparison, data.task_type);
+        })
+        .catch(function () {
+            chartErrorAll("Network error while loading visualization data.");
+        });
+}
+function scheduleVisualizations() {
+    window.clearTimeout(visualizationTimer);
+    visualizationTimer = window.setTimeout(loadVisualizations, 120);
+}
+["target", "task_type", "chartFeature", "visualModelSelector", "regressionMetricSelector"].forEach(function (id) {
+    var control = document.getElementById(id);
+    if (control) {
+        control.addEventListener("change", scheduleVisualizations);
+    }
+});
+if (HAS_DATASET) { loadVisualizations(); }
 </script>
 </body>
 </html>

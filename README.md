@@ -3,38 +3,45 @@
 AutoFlow AI is a self-contained machine-learning operations application:
 
 1. **Upload** a CSV dataset — it is validated, profiled (types, missing values, duplicates), and stored in an application-managed directory.
-2. **Train** a classification or regression pipeline — AutoFlow trains three candidates (a dummy baseline, a linear model, and a Random Forest), evaluates them on a held-out validation split, records everything to MLflow, and selects the best candidate by an explicit primary metric.
-3. **Track & persist** — every run (including failures) is written to an MLflow tracking store with metrics, parameters, and artifacts; the winning model is persisted as a complete artifact and registered in the MLflow Model Registry, with a state file that survives application restarts.
-4. **Predict** — the dashboard auto-generates input fields from the active model's trained feature contract, validates payloads against it, and serves single-row and batch (up to 1 000 rows) predictions. Models are always loaded from trusted, application-managed locations only.
+2. **Task 1 benchmark** — AutoFlow trains a baseline and the configured classification or regression candidate algorithms, evaluates them on a held-out validation split, records every result to MLflow, and selects the measured winner by an explicit primary metric.
+3. **Task 2 meta-learning** — AutoFlow extracts dataset meta-features, predicts exactly one algorithm from historical real Task 1 experiments when enough diverse data exists, or labels a cold-start rule-based fallback clearly. It then trains only that one algorithm.
+4. **Track & persist** — every run (including failures) is written to MLflow; the complete Task 1 and Task 2 pipelines are registered separately and can be downloaded or selected for prediction.
+5. **Compare & predict** — the dashboard displays the measured Task 1 winner and independently trained Task 2 result, then serves predictions from either saved model using its recorded feature contract.
 
 All displayed numbers come from real computation or the real MLflow store — the dashboard never shows fabricated metrics.
 
 ## Architecture
 
 ```
-FastAPI (main.py, single module)          templates/dashboard.html
+FastAPI (main.py)                         templates/dashboard.html
 ├── POST /upload      → validate CSV → profile → save under uploads/<uuid>.csv
 │                                        → persist state (autoflow_state.json)
-├── POST /train       → 3 candidates (baseline / linear / Random Forest)
-│                        ├ preprocessing per candidate (impute → encode/scale)
-│                        ├ 80/20 validation split (stratified for classification)
-│                        ├ metrics (Accuracy/Precision/Recall/F1/confusion
-│                        │           or MAE/RMSE/R²) + reliability warnings
-│                        ├ MLflow run per candidate (params, metrics, artifacts,
-│                        │  model logging; failures become FAILED runs with details)
-│                        └ selection by F1 (maximize) / RMSE (minimize)
-│                        → registration in MLflow Model Registry + state update
-├── GET  /api/…       → dataset preview, MLflow experiment history, model schema
-├── POST /predict     → schema-validated single-row or batch inference
+├── POST /train       → benchmark configured candidates and choose by weighted F1 / RMSE
+│                        ├ Task 1: baseline + seven classification or six regression models
+│                        ├ Task 2: historical meta-model or explicit cold-start fallback
+│                        ├ both train on leakage-safe preprocessing and the same split
+│                        └ compare results; separately persist both complete pipelines
+├── GET  /api/…       → dataset profile, detection, experiments, saved models, comparison
+├── POST /predict     → schema-validated inference using the selected trusted model run
+├── GET  /api/models/{run_id}/download → download a complete pipeline artifact
 └── GET  /            → server-rendered dashboard (Jinja2 + vanilla JS + CSS)
+
+Meta-learning lives in `meta_learning/`; real Task 1 meta-examples are stored in
+`meta_data/experiments.json`. A trained meta-model is used only after eight
+historical experiments for that problem type and at least two observed winner
+algorithms. The current dataset fingerprint is excluded from its own meta-model
+training data. The probability output is withheld because it is not calibrated,
+and training the meta-classifier alone is not evidence that selection
+generalizes to unseen datasets.
 ```
 
 Persisted per training run (see **PERSISTENCE.md** for the full contract):
 
 - MLflow tracking DB (`mlflow.db`, SQLite by default) — experiments `autoflow_run_*`
 - MLflow artifact store (`mlruns/`) — datasets, evaluation artifacts, inference schema, logged models
-- MLflow Model Registry — `autoflow-active-models` (configurable), one READY version per successful training
+- MLflow Model Registry — `autoflow-active-models` for Task 1 and `autoflow-meta-models` for Task 2
 - State file (`autoflow_state.json`) — dataset reference, selected model, `feature_schema`, reliability notices
+- Meta-dataset (`meta_data/experiments.json`) — real dataset-level features and Task 1 winner labels
 
 ## Prerequisites
 
@@ -79,8 +86,8 @@ cd C:\Users\parth\Downloads\autoflow_project\autoflow_project
 & ".venv\Scripts\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-Then open **http://127.0.0.1:8000/** — the dashboard includes Overview, Dataset
-management, Model training, Experiments, and Predictions. Startup performs state
+Then open **http://127.0.0.1:8000/** — the dashboard includes Overview, Dataset,
+Training, Meta-Learning, Task Comparison, and Predictions. Startup performs state
 recovery: if a state file and/or registered model exists, the active model is
 re-validated and reloaded from trusted locations (`autoflow.db` persists
 state; MLflow registry is the fallback when the state file is missing or damaged).
@@ -131,12 +138,48 @@ Responses distinguish a successful prediction (`prediction`, `model_version`,
 `registry_version`) from structured validation errors
 (`missing_features`, `unexpected_features`, `invalid_features` with row indices).
 
+## Dashboard visualizations
+
+The dashboard provides 19 data-driven charts across dataset analysis, Task 1
+benchmarking, Task 2 meta-learning, and their comparison. Dataset charts show
+the selected target distribution, missing values by column, a selectable
+numeric-feature histogram and IQR box plot, and Pearson correlations between
+numeric features (the target is excluded; at most 20 features are shown).
+Model charts show Task 1 candidate metrics, fit times, cross-validation
+stability, and either a validation confusion matrix/ROC curve or regression
+actual-versus-predicted and residual plots. Model-specific evaluation charts
+use a maximum of 500 actual held-out validation observations; ROC curves use
+the estimator's real probabilities or decision scores.
+
+Meta-learning charts include Random Forest feature importance and raw
+classifier probabilities when the meta-model is trained, historical Task 1
+winners counted once per dataset fingerprint, and leave-one-dataset-out
+reliability. Probabilities are explicitly uncalibrated and are not confidence
+or reliability estimates. Reliability is withheld until at least 10 distinct
+historical datasets are available. The comparison charts use the same held-out
+split for Task 1 and Task 2.
+
+`GET /api/visualizations` returns the source data for these charts. Optional
+query parameters are `target`, `task_type`, `feature`, `bins`, and
+`model_run_id`. Histogram bin counts are bounded to 5–60. Changing the selected
+target or task type does not reuse model results from a different training
+configuration.
+
+Task 1 total computation time is the sum of candidate fit, validation,
+cross-validation, and evaluation-chart calculation time. Task 2 total
+computation time includes meta-feature/history selection and its one model's
+fit, validation, and evaluation-chart calculation. Both exclude MLflow
+logging/artifact persistence; individual model-fit times are shown separately.
+These timing definitions are descriptive and should not be interpreted as a
+hardware-independent speed guarantee.
+
 ## MLflow tracking & model persistence
 
 - Every training creates an experiment named `autoflow_run_…` and one MLflow run
   per candidate with: task type, dataset fingerprint, model name, hyperparameters,
   metrics, run status, and — for failed candidates — `error_type`/`error_message` tags.
-- Run artifacts include the validation dataset, `evaluation/confusion_matrix.json`
+- Run artifacts include the validation dataset, bounded held-out
+  `evaluation/evaluation_data.json`, `evaluation/confusion_matrix.json`
   (classification), `inference/inference_schema.json`, and the complete logged model.
 - The selected model is additionally registered in the MLflow Model Registry
   under `autoflow-active-models` (each success creates a new READY version) and
@@ -163,9 +206,15 @@ Browse the runs with the MLflow UI if desired:
 | POST | `/upload` | Validate, profile, store CSV | 400 invalid CSV · 413 > 10 MiB · 415 not a CSV |
 | POST | `/train` | Train + select + register | 409 no dataset · 422 invalid request/all candidates failed |
 | GET | `/api/dataset/preview?rows=N` | Real preview + column summary (N ≤ 50) | 409 no dataset |
+| GET | `/api/visualizations?target=NAME&task_type=TYPE&feature=NAME&bins=N&model_run_id=ID` | Real dataset, validation, comparison, and meta-learning chart data | 409 no dataset · 422 invalid target/task/data |
+| GET | `/api/problem-detection?target=NAME` | Heuristic classification/regression suggestion | 409 no dataset |
+| GET | `/api/overview` | Computed dashboard counts and recent activity | — |
 | GET | `/api/experiments?limit=N` | Real MLflow run history (N ≤ 100) | 503 tracking store unavailable |
+| GET | `/api/comparison` | Latest Task 1 / Task 2 metric and time comparison | 409 no training |
+| GET | `/api/models` | Available trained Task 1 and Task 2 models | — |
+| GET | `/api/models/{run_id}/download` | Download a trusted complete pipeline as Joblib | 404 unknown run · 503 unavailable artifact |
 | GET | `/api/model/schema` | Active model's feature contract | 409 no model |
-| POST | `/predict` | Single-row/batch inference | 422 validation · 409 no model/no data · 413 > 1000 rows · 503 invalid/missing artifact |
+| POST | `/predict` | Single-row/batch inference; optional `model_run_id` selects a saved run | 422 validation · 409 no model/no data · 413 > 1000 rows · 503 invalid/missing artifact |
 
 More details, together with the storage layout, trust rules, and recovery order,
 are documented in **PERSISTENCE.md**.
@@ -186,7 +235,8 @@ From the project root (the directory containing `main.py`):
 Covered: upload validation & security (path traversal, extension, size, empty,
 malformed), dataset profiling, classification/regression training + metric
 correctness, MLflow experiment tracking (including FAILED run reporting and
-limits), model artifact persistence & registry registration, prediction
+limits), Task 1/Task 2 training, separate registry persistence, selected-model
+prediction and artifact download, prediction
 validation (types, missing/unexpected features, batch, row cap), validation
 error contracts, restart recovery (state restore, registry fallback, tamper
 rejection, broken artifacts), dashboard rendering (populated & empty states),

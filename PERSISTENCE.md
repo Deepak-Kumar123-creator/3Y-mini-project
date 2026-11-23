@@ -24,12 +24,12 @@ Per-run artifacts additionally include:
 
 ### 2. Selected-model reference (MLflow Model Registry)
 
-When training selects the best successful candidate, its run artifact is
-registered in the MLflow Model Registry under
-`ACTIVE_MODEL_REGISTRY_NAME = "autoflow-active-models"` (configurable via
-`AUTOFLOW_ACTIVE_MODEL_REGISTRY`). The registered model version carries tags
-`task_type` and `run_id`. This entry lives in the MLflow backend database
-(`mlflow.db`), so it survives restarts and even loss of the state file.
+Task 1's actual benchmark winner is registered under
+`autoflow-active-models` (configurable via `AUTOFLOW_ACTIVE_MODEL_REGISTRY`).
+Task 2's independently trained model is registered under
+`autoflow-meta-models` (configurable via `AUTOFLOW_META_MODEL_REGISTRY`). The
+separate registries prevent Task 2 from being mistaken for the benchmark winner
+during Task 1 recovery. Both versions carry `task_type` and `run_id` tags.
 
 ### 3. Application state file
 
@@ -40,6 +40,9 @@ registered in the MLflow Model Registry under
 - latest training: `task_type`, `target`, `primary_metric`,
   `metric_direction`, `run_group`, `results` (all candidates with metrics,
   status, hyperparameters, confusion matrix, error details), `reliability`
+- Task 2's predicted algorithm, selection method, meta-features, metrics,
+  training time, and separate registry reference
+- Task 1/Task 2 comparison metrics and timing
 - selection: `best_model` (name + MLflow `run_id`) and
   `active_model` = the persistence reference
   (`registry_name`, `registry_version`, `run_id`, `registered`)
@@ -87,12 +90,20 @@ without retraining.
 
 ## Prediction contract (requirements 6, 8, 9, 10)
 
-Endpoint: `POST /predict` (`Content-Type: application/json`).
+Endpoint: `POST /predict` (`Content-Type: application/json`). An optional `model_run_id`
+selects another finished AutoFlow run, including the Task 2 model. The selected
+run is validated against the application's MLflow store and its inference
+schema artifact before loading.
 
 | Field | Meaning |
 |---|---|
 | `{"features": {...}}` | single row (original contract; response shape unchanged: `prediction`, `model_version`, `status`, plus additive `registry_version`) |
 | `{"rows": [{...}, ...]}` | batch prediction (max `MAX_PREDICTION_ROWS = 1000`), response `{"predictions": [...], "count": n, ...}` |
+| `"model_run_id": "<run-id>"` | optional model selector combined with either payload shape |
+
+`GET /api/models/{run_id}/download` downloads the complete preprocessing and
+estimator pipeline as a Joblib artifact. Only finished runs in AutoFlow-owned
+MLflow experiments can be selected or downloaded.
 
 Validation performed per row against `feature_names_in_` of the *trained
 pipeline* and the persisted `feature_schema`:
