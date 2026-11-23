@@ -952,6 +952,15 @@ class TrainingPersistenceTests(TrainingTestBase):
         download = main.download_model(task_2["run_id"])
         self.assertEqual(download.status_code, 200)
         self.assertTrue(download.headers["content-disposition"].endswith(".joblib\""))
+        self.assertIn("meta-learning", download.headers["content-disposition"])
+        self.assertNotIn(task_2["run_id"], download.headers["content-disposition"])
+        benchmark_download = main.download_model(main.STATE["best_model"]["run_id"])
+        self.assertEqual(benchmark_download.status_code, 200)
+        self.assertIn("benchmark-", benchmark_download.headers["content-disposition"])
+        self.assertNotIn(
+            main.STATE["best_model"]["run_id"],
+            benchmark_download.headers["content-disposition"],
+        )
         for entry in main.STATE["results"]:
             self.assertEqual(entry["primary_metric"], "F1")
             self.assertIn("confusion_matrix", entry)
@@ -1609,9 +1618,10 @@ class DashboardTemplateTests(unittest.TestCase):
 
         for needle in (
             "Overview",
-            "Dataset management",
-            "Model training",
-            "Experiments",
+            "Dataset",
+            "Training",
+            "Meta-Learning",
+            "Task Comparison",
             "Predictions",
             "clinical.csv",
             "60 rows",
@@ -1620,21 +1630,23 @@ class DashboardTemplateTests(unittest.TestCase):
             "2.4043",
             "Random Forest Regressor",
             "selected",
-            "RuntimeError",
             "synthetic failure",
             "Evaluation notices",
             "Validation split contains only 12 rows.",
-            "registry v3",
-            "autoflow_run_abc",
         ):
             self.assertIn(needle, html)
         self.assertIn('<option value="target" selected>', html)
         self.assertIn('<option value="regression" selected>', html)
+        self.assertNotIn("Experiments", html)
+        self.assertNotIn("Run ID", html)
+        self.assertNotIn("fingerprint", html)
+        self.assertNotIn("registry v", html)
+        self.assertNotIn("autoflow_run_abc", html)
 
     def test_empty_state_renders_true_empty_states(self):
         html = self.render_dashboard(state_template())
 
-        self.assertIn("None", html)
+        self.assertIn("Not uploaded", html)
         self.assertIn("No training has been run yet.", html)
         self.assertIn("No evaluated models yet. Run training to generate real results.", html)
         self.assertIn("No trained model yet. Train a model first", html)
@@ -1661,7 +1673,7 @@ class DashboardTemplateTests(unittest.TestCase):
             }
         )
         html = self.render_dashboard(populated)
-        self.assertIn("FAILED", html)
+        self.assertIn("Failed", html)
         self.assertIn("row-failed", html)
 
 

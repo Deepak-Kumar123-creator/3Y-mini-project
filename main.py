@@ -2442,7 +2442,17 @@ def download_model(run_id: str):
     artifact = io.BytesIO()
     joblib.dump(pipeline, artifact)
     artifact.seek(0)
-    filename = f"autoflow-model-{run_id}.joblib"
+    model_name = re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        run.data.params.get("model_type", "model").lower(),
+    ).strip("-") or "model"
+    pipeline_type = (
+        "meta-learning"
+        if run.data.params.get("model_role") == "task_2_meta_selection"
+        else "benchmark"
+    )
+    filename = f"autoflow-{pipeline_type}-{model_name}.joblib"
     return StreamingResponse(
         artifact,
         media_type="application/octet-stream",

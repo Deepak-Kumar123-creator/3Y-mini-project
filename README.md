@@ -86,8 +86,8 @@ cd C:\Users\parth\Downloads\autoflow_project\autoflow_project
 & ".venv\Scripts\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-Then open **http://127.0.0.1:8000/** — the dashboard includes Overview, Dataset
-management, Model training, Experiments, and Predictions. Startup performs state
+Then open **http://127.0.0.1:8000/** — the dashboard includes Overview, Dataset,
+Training, Meta-Learning, Task Comparison, and Predictions. Startup performs state
 recovery: if a state file and/or registered model exists, the active model is
 re-validated and reloaded from trusted locations (`autoflow.db` persists
 state; MLflow registry is the fallback when the state file is missing or damaged).
