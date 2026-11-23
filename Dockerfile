@@ -7,31 +7,32 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Toolchain for source distributions without pre-built wheels (kept minimal).
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
+# Install Python dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY main.py ./
-COPY templates ./templates
+# Copy required application files
+COPY main.py visualization.py ./
+COPY meta_learning/ ./meta_learning/
+COPY templates/ ./templates/
 
-# Data persisted across restarts (uploads, state file, MLflow tracking DB)
-# and the MLflow artifact store live outside the application code directories.
-RUN mkdir -p /app/data /app/mlruns
-
-# Run as a dedicated non-root user: the UID is fixed (10001) so bind-mounted
-# volumes can be pre-created with matching ownership if required.
-RUN useradd --system --create-home --home-dir /home/autoflow --uid 10001 autoflow \
+# Create persistent storage directories and configure permissions
+RUN mkdir -p /app/data/meta_data /app/mlruns \
+    && useradd --system --create-home \
+       --home-dir /home/autoflow --uid 10001 autoflow \
     && chown -R autoflow:autoflow /app /home/autoflow
+
+# Run application as a non-root user
 USER autoflow
 
 EXPOSE 8000
 
+# Application health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)" || exit 1
 
+# Persistent storage
 VOLUME ["/app/data", "/app/mlruns"]
 
+# Start FastAPI application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
